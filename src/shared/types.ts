@@ -62,8 +62,6 @@ export interface Memory {
   projectId: string
   type: MemoryType
   category?: MemoryCategory
-  // Room = topic domain within the project (e.g. "auth", "api", "database")
-  room?: string
   // Layer controls when this memory is injected into Claude prompts
   layer: MemoryLayer
   // content = the concise, actionable memory (what Claude needs to know)
@@ -76,7 +74,7 @@ export interface Memory {
   referenceCount: number
   createdAt: string
   lastReferenced: string
-  // Palace fields
+  // Palace fields - spatial memory architecture
   wing?: string
   room?: string
   hall?: string
