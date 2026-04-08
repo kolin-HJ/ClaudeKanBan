@@ -12,6 +12,7 @@ export type MemoryCategory =
   | 'workflow'
   | 'dependency'
 export type SessionStatus = 'spawning' | 'running' | 'waiting-input' | 'completed' | 'error'
+export type SessionDbStatus = 'running' | 'completed' | 'error' | 'terminated'
 
 export interface Project {
   id: string
@@ -110,6 +111,87 @@ export interface Skill {
   referenceFiles: string[]
 }
 
+export interface SessionRecord {
+  id: string
+  taskId: string
+  projectId: string
+  startedAt: string
+  endedAt?: string
+  status: SessionDbStatus
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  totalCostUsd: number
+  durationSecs: number
+}
+
+export interface ToolUsageRecord {
+  id: string
+  sessionId: string
+  toolName: string
+  inputJson?: string
+  timestamp: string
+}
+
+export interface ContextEvent {
+  id: string
+  sessionId: string
+  eventType: string
+  target?: string
+  timestamp: string
+}
+
+export interface SessionInsight {
+  id: string
+  sessionId: string
+  projectId: string
+  taskId: string
+  tokenInput: number
+  tokenOutput: number
+  costUsd: number
+  durationSecs: number
+  toolsJson?: string
+  filesReadJson?: string
+  filesCreatedJson?: string
+  learningsJson?: string
+  summary?: string
+  createdAt: string
+}
+
+export interface ProjectSkillConfig {
+  id: string
+  projectId: string
+  skillPath: string
+  active: boolean
+  priority: number
+}
+
+export interface UsageSummary {
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCostUsd: number
+  sessionCount: number
+  totalDurationSecs: number
+}
+
+export interface ToolFrequency {
+  toolName: string
+  count: number
+}
+
+export interface LiveSessionUsage {
+  taskId: string
+  sessionId: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  estimatedCostUsd: number
+  toolsUsed: string[]
+  startedAt: number
+}
+
 // IPC channel names
 export const IPC = {
   PROJECTS_LIST: 'projects:list',
@@ -174,9 +256,44 @@ export const IPC = {
   SYSTEM_OPEN_DIALOG: 'system:openDialog',
   SYSTEM_OPEN_EXTERNAL: 'system:openExternal',
 
+  // Usage & analytics
+  USAGE_SESSION: 'usage:session',
+  USAGE_WEEKLY: 'usage:weekly',
+  USAGE_PROJECT: 'usage:project',
+  USAGE_DAILY_BREAKDOWN: 'usage:dailyBreakdown',
+  USAGE_TOOLS: 'usage:tools',
+  USAGE_CONTEXT: 'usage:context',
+  USAGE_LIVE: 'usage:live',
+
+  // Insights
+  INSIGHTS_LIST: 'insights:list',
+  INSIGHTS_GET: 'insights:get',
+  INSIGHTS_PROMOTE_LEARNING: 'insights:promoteLearning',
+
+  // Enhanced memory
+  MEMORY_CONSOLIDATE: 'memory:consolidate',
+  MEMORY_EXPORT: 'memory:export',
+  MEMORY_IMPORT: 'memory:import',
+  MEMORY_GLOBAL_PATTERNS: 'memory:globalPatterns',
+
+  // Enhanced skills (per-project)
+  SKILLS_PROJECT_LIST: 'skills:projectList',
+  SKILLS_TOGGLE: 'skills:toggle',
+  SKILLS_SET_PRIORITY: 'skills:setPriority',
+
+  // App settings
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
+
+  // System health
+  SYSTEM_CLAUDE_CHECK: 'system:claudeCheck',
+  SYSTEM_ACTIVE_SESSIONS: 'system:activeSessions',
+
   // Events pushed from main → renderer
   EVENT_SESSION_OUTPUT: 'event:sessionOutput',
   EVENT_TASK_STATUS: 'event:taskStatus',
   EVENT_OUTPUT_CREATED: 'event:outputCreated',
-  EVENT_GIT_CHANGED: 'event:gitChanged'
+  EVENT_GIT_CHANGED: 'event:gitChanged',
+  EVENT_USAGE_UPDATE: 'event:usageUpdate',
+  EVENT_SESSION_HEALTH: 'event:sessionHealth'
 } as const

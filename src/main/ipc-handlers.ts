@@ -7,12 +7,16 @@ import { GitManager } from './git-manager'
 import { GithubManager } from './github-manager'
 import { MemoryManager } from './memory-manager'
 import { SkillsManager } from './skills-manager'
+import { InsightsManager } from './insights-manager'
 
 const claudeManager = new ClaudeManager()
 const gitManager = new GitManager()
 const githubManager = new GithubManager()
 const memoryManager = new MemoryManager()
 const skillsManager = new SkillsManager()
+const insightsManager = new InsightsManager(memoryManager)
+
+export { claudeManager }
 
 export function registerIpcHandlers(): void {
   registerProjectHandlers()
@@ -26,6 +30,9 @@ export function registerIpcHandlers(): void {
   registerSkillsHandlers()
   registerDocsHandlers()
   registerScheduledHandlers()
+  registerUsageHandlers()
+  registerInsightsHandlers()
+  registerSettingsHandlers()
   registerSystemHandlers()
 }
 
@@ -103,7 +110,6 @@ function registerTaskHandlers(): void {
       .prepare(`UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(status, taskId)
 
-    // Notify renderer
     BrowserWindow.getAllWindows().forEach((win) => {
       win.webContents.send(IPC.EVENT_TASK_STATUS, { taskId, status })
     })
@@ -140,21 +146,57 @@ function registerSessionHandlers(): void {
       .get(task.project_id) as any
     if (!project) throw new Error('Project not found')
 
+    // Verify project path exists
+    const { existsSync } = require('fs')
+    if (!existsSync(project.path)) {
+      throw new Error(`Project directory not found: ${project.path}`)
+    }
+
     // Build memory context block for this task
     const memoryContext = await memoryManager.generateContextBlock(task.project_id, task.title)
+
+    // Build skills context from active project skills
+    let skillsContext = ''
+    try {
+      const activeSkills = getDb()
+        .prepare(
+          `SELECT skill_path FROM project_skills
+           WHERE project_id = ? AND active = 1
+           ORDER BY priority ASC`
+        )
+        .all(task.project_id) as { skill_path: string }[]
+
+      if (activeSkills.length > 0) {
+        const skillContents: string[] = []
+        for (const { skill_path } of activeSkills) {
+          try {
+            const content = await skillsManager.read(skill_path)
+            if (content) skillContents.push(content)
+          } catch {
+            // skip unreadable skills
+          }
+        }
+        if (skillContents.length > 0) {
+          skillsContext = '# Active Skills\n\n' + skillContents.join('\n\n---\n\n')
+        }
+      }
+    } catch {
+      // ignore skills errors
+    }
 
     await claudeManager.spawn({
       taskId,
       projectPath: project.path,
+      projectId: task.project_id,
       goal: task.title + (task.description ? `\n\n${task.description}` : ''),
       depth: task.depth,
       permission: task.permission,
-      memoryContext
+      memoryContext,
+      skillsContext
     })
   })
 
   ipcMain.handle(IPC.SESSIONS_SEND, async (_e, taskId: string, message: string) => {
-    // Save user message to DB
     const msgId = uuidv4()
     getDb()
       .prepare('INSERT INTO messages (id, task_id, role, content) VALUES (?, ?, ?, ?)')
@@ -162,7 +204,6 @@ function registerSessionHandlers(): void {
 
     await claudeManager.send(taskId, message)
 
-    // Move task to in-progress
     getDb()
       .prepare(`UPDATE tasks SET status = 'in-progress', updated_at = datetime('now') WHERE id = ?`)
       .run(taskId)
@@ -376,6 +417,22 @@ function registerMemoryHandlers(): void {
   ipcMain.handle(IPC.MEMORY_CAPTURE_TASK, (_e, taskId: string) => {
     return memoryManager.captureFromTask(taskId)
   })
+
+  ipcMain.handle(IPC.MEMORY_CONSOLIDATE, (_e, projectId: string) => {
+    return memoryManager.consolidate(projectId)
+  })
+
+  ipcMain.handle(IPC.MEMORY_EXPORT, (_e, projectId: string) => {
+    return memoryManager.exportMemories(projectId)
+  })
+
+  ipcMain.handle(IPC.MEMORY_IMPORT, (_e, projectId: string, data: any[]) => {
+    return memoryManager.importMemories(projectId, data)
+  })
+
+  ipcMain.handle(IPC.MEMORY_GLOBAL_PATTERNS, () => {
+    return memoryManager.getGlobalPatterns()
+  })
 }
 
 // ─── Skills ───────────────────────────────────────────────────────────────────
@@ -400,6 +457,55 @@ function registerSkillsHandlers(): void {
   ipcMain.handle(IPC.SKILLS_FETCH_URL, async (_e, url: string) => {
     return skillsManager.fetchFromUrl(url)
   })
+
+  // Per-project skill configuration
+  ipcMain.handle(IPC.SKILLS_PROJECT_LIST, (_e, projectId: string) => {
+    const rows = getDb()
+      .prepare(
+        `SELECT * FROM project_skills WHERE project_id = ? ORDER BY priority ASC`
+      )
+      .all(projectId) as any[]
+    return rows.map((r: any) => ({
+      id: r.id,
+      projectId: r.project_id,
+      skillPath: r.skill_path,
+      active: r.active === 1,
+      priority: r.priority
+    }))
+  })
+
+  ipcMain.handle(
+    IPC.SKILLS_TOGGLE,
+    (_e, projectId: string, skillPath: string, active: boolean) => {
+      const existing = getDb()
+        .prepare('SELECT id FROM project_skills WHERE project_id = ? AND skill_path = ?')
+        .get(projectId, skillPath) as any
+
+      if (existing) {
+        getDb()
+          .prepare('UPDATE project_skills SET active = ? WHERE id = ?')
+          .run(active ? 1 : 0, existing.id)
+      } else {
+        const id = uuidv4()
+        getDb()
+          .prepare(
+            'INSERT INTO project_skills (id, project_id, skill_path, active) VALUES (?, ?, ?, ?)'
+          )
+          .run(id, projectId, skillPath, active ? 1 : 0)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SKILLS_SET_PRIORITY,
+    (_e, projectId: string, skillPath: string, priority: number) => {
+      getDb()
+        .prepare(
+          'UPDATE project_skills SET priority = ? WHERE project_id = ? AND skill_path = ?'
+        )
+        .run(priority, projectId, skillPath)
+    }
+  )
 }
 
 // ─── Docs ─────────────────────────────────────────────────────────────────────
@@ -418,7 +524,8 @@ function registerDocsHandlers(): void {
   })
 
   ipcMain.handle(IPC.DOCS_UPDATE, (_e, filePath: string, content: string) => {
-    const { writeFileSync, mkdirSync, dirname } = require('fs')
+    const { writeFileSync, mkdirSync } = require('fs')
+    const { dirname } = require('path')
     mkdirSync(dirname(filePath), { recursive: true })
     writeFileSync(filePath, content, 'utf-8')
   })
@@ -513,6 +620,197 @@ function registerScheduledHandlers(): void {
   })
 }
 
+// ─── Usage & Analytics ───────────────────────────────────────────────────────
+
+function registerUsageHandlers(): void {
+  ipcMain.handle(IPC.USAGE_SESSION, (_e, sessionId: string) => {
+    const row = getDb()
+      .prepare('SELECT * FROM sessions WHERE id = ?')
+      .get(sessionId) as any
+    if (!row) return null
+    return rowToSession(row)
+  })
+
+  ipcMain.handle(IPC.USAGE_WEEKLY, (_e, projectId?: string) => {
+    const query = projectId
+      ? `SELECT
+           COALESCE(SUM(input_tokens), 0) as total_input,
+           COALESCE(SUM(output_tokens), 0) as total_output,
+           COALESCE(SUM(total_cost_usd), 0) as total_cost,
+           COUNT(*) as session_count,
+           COALESCE(SUM(duration_secs), 0) as total_duration
+         FROM sessions
+         WHERE project_id = ? AND started_at >= datetime('now', '-7 days')`
+      : `SELECT
+           COALESCE(SUM(input_tokens), 0) as total_input,
+           COALESCE(SUM(output_tokens), 0) as total_output,
+           COALESCE(SUM(total_cost_usd), 0) as total_cost,
+           COUNT(*) as session_count,
+           COALESCE(SUM(duration_secs), 0) as total_duration
+         FROM sessions
+         WHERE started_at >= datetime('now', '-7 days')`
+
+    const row = (
+      projectId
+        ? getDb().prepare(query).get(projectId)
+        : getDb().prepare(query).get()
+    ) as any
+
+    return {
+      totalInputTokens: row.total_input,
+      totalOutputTokens: row.total_output,
+      totalCostUsd: row.total_cost,
+      sessionCount: row.session_count,
+      totalDurationSecs: row.total_duration
+    }
+  })
+
+  ipcMain.handle(IPC.USAGE_PROJECT, (_e, projectId: string) => {
+    const row = getDb()
+      .prepare(
+        `SELECT
+           COALESCE(SUM(input_tokens), 0) as total_input,
+           COALESCE(SUM(output_tokens), 0) as total_output,
+           COALESCE(SUM(total_cost_usd), 0) as total_cost,
+           COUNT(*) as session_count,
+           COALESCE(SUM(duration_secs), 0) as total_duration
+         FROM sessions
+         WHERE project_id = ?`
+      )
+      .get(projectId) as any
+    return {
+      totalInputTokens: row.total_input,
+      totalOutputTokens: row.total_output,
+      totalCostUsd: row.total_cost,
+      sessionCount: row.session_count,
+      totalDurationSecs: row.total_duration
+    }
+  })
+
+  ipcMain.handle(IPC.USAGE_DAILY_BREAKDOWN, (_e, days = 7, projectId?: string) => {
+    const query = projectId
+      ? `SELECT
+           date(started_at) as day,
+           COALESCE(SUM(input_tokens), 0) as input_tokens,
+           COALESCE(SUM(output_tokens), 0) as output_tokens,
+           COALESCE(SUM(total_cost_usd), 0) as cost,
+           COUNT(*) as sessions
+         FROM sessions
+         WHERE project_id = ? AND started_at >= datetime('now', '-' || ? || ' days')
+         GROUP BY date(started_at)
+         ORDER BY day ASC`
+      : `SELECT
+           date(started_at) as day,
+           COALESCE(SUM(input_tokens), 0) as input_tokens,
+           COALESCE(SUM(output_tokens), 0) as output_tokens,
+           COALESCE(SUM(total_cost_usd), 0) as cost,
+           COUNT(*) as sessions
+         FROM sessions
+         WHERE started_at >= datetime('now', '-' || ? || ' days')
+         GROUP BY date(started_at)
+         ORDER BY day ASC`
+
+    return projectId
+      ? getDb().prepare(query).all(projectId, days)
+      : getDb().prepare(query).all(days)
+  })
+
+  ipcMain.handle(IPC.USAGE_TOOLS, (_e, projectId?: string, days = 7) => {
+    const query = projectId
+      ? `SELECT tu.tool_name, COUNT(*) as count
+         FROM tool_usage tu
+         JOIN sessions s ON s.id = tu.session_id
+         WHERE s.project_id = ? AND tu.timestamp >= datetime('now', '-' || ? || ' days')
+         GROUP BY tu.tool_name
+         ORDER BY count DESC`
+      : `SELECT tu.tool_name, COUNT(*) as count
+         FROM tool_usage tu
+         WHERE tu.timestamp >= datetime('now', '-' || ? || ' days')
+         GROUP BY tu.tool_name
+         ORDER BY count DESC`
+
+    const rows = projectId
+      ? getDb().prepare(query).all(projectId, days)
+      : getDb().prepare(query).all(days)
+    return (rows as any[]).map((r) => ({ toolName: r.tool_name, count: r.count }))
+  })
+
+  ipcMain.handle(IPC.USAGE_CONTEXT, (_e, sessionId: string) => {
+    const rows = getDb()
+      .prepare('SELECT * FROM context_events WHERE session_id = ? ORDER BY timestamp')
+      .all(sessionId) as any[]
+    return rows.map((r: any) => ({
+      id: r.id,
+      sessionId: r.session_id,
+      eventType: r.event_type,
+      target: r.target,
+      timestamp: r.timestamp
+    }))
+  })
+
+  ipcMain.handle(IPC.USAGE_LIVE, () => {
+    return claudeManager.getAllLiveUsage()
+  })
+}
+
+function rowToSession(row: any) {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    projectId: row.project_id,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    status: row.status,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheWriteTokens: row.cache_write_tokens,
+    totalCostUsd: row.total_cost_usd,
+    durationSecs: row.duration_secs
+  }
+}
+
+// ─── Insights ────────────────────────────────────────────────────────────────
+
+function registerInsightsHandlers(): void {
+  ipcMain.handle(IPC.INSIGHTS_LIST, (_e, projectId: string, limit?: number) => {
+    return insightsManager.list(projectId, limit)
+  })
+
+  ipcMain.handle(IPC.INSIGHTS_GET, (_e, id: string) => {
+    return insightsManager.get(id)
+  })
+
+  ipcMain.handle(IPC.INSIGHTS_PROMOTE_LEARNING, (_e, projectId: string, learning: string) => {
+    return insightsManager.promoteLearning(projectId, learning)
+  })
+}
+
+// ─── App Settings ─────────────────────────────────────────────────────────────
+
+function registerSettingsHandlers(): void {
+  ipcMain.handle(IPC.SETTINGS_GET, (_e, key: string) => {
+    const row = getDb()
+      .prepare('SELECT value FROM app_settings WHERE key = ?')
+      .get(key) as any
+    if (!row) return null
+    try {
+      return JSON.parse(row.value)
+    } catch {
+      return row.value
+    }
+  })
+
+  ipcMain.handle(IPC.SETTINGS_SET, (_e, key: string, value: any) => {
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value)
+    getDb()
+      .prepare(
+        'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)'
+      )
+      .run(key, serialized)
+  })
+}
+
 // ─── System ───────────────────────────────────────────────────────────────────
 
 function registerSystemHandlers(): void {
@@ -523,5 +821,13 @@ function registerSystemHandlers(): void {
 
   ipcMain.handle(IPC.SYSTEM_OPEN_EXTERNAL, (_e, url: string) => {
     shell.openExternal(url)
+  })
+
+  ipcMain.handle(IPC.SYSTEM_CLAUDE_CHECK, () => {
+    return ClaudeManager.checkClaudeCli()
+  })
+
+  ipcMain.handle(IPC.SYSTEM_ACTIVE_SESSIONS, () => {
+    return claudeManager.getActiveSessions()
   })
 }

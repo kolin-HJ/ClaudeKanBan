@@ -81,7 +81,12 @@ const api = {
       ipcRenderer.invoke(IPC.MEMORY_SEARCH, projectId, query),
     contextBlock: (projectId: string, taskDescription: string) =>
       ipcRenderer.invoke(IPC.MEMORY_CONTEXT_BLOCK, projectId, taskDescription),
-    captureFromTask: (taskId: string) => ipcRenderer.invoke(IPC.MEMORY_CAPTURE_TASK, taskId)
+    captureFromTask: (taskId: string) => ipcRenderer.invoke(IPC.MEMORY_CAPTURE_TASK, taskId),
+    consolidate: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_CONSOLIDATE, projectId),
+    exportMemories: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_EXPORT, projectId),
+    importMemories: (projectId: string, data: any[]) =>
+      ipcRenderer.invoke(IPC.MEMORY_IMPORT, projectId, data),
+    globalPatterns: () => ipcRenderer.invoke(IPC.MEMORY_GLOBAL_PATTERNS)
   },
 
   // ─── Skills ───────────────────────────────────────────────────────────────────
@@ -92,7 +97,12 @@ const api = {
       ipcRenderer.invoke(IPC.SKILLS_UPDATE, filePath, content),
     create: (name: string, content: string, targetDir: string) =>
       ipcRenderer.invoke(IPC.SKILLS_CREATE, name, content, targetDir),
-    fetchUrl: (url: string) => ipcRenderer.invoke(IPC.SKILLS_FETCH_URL, url)
+    fetchUrl: (url: string) => ipcRenderer.invoke(IPC.SKILLS_FETCH_URL, url),
+    projectList: (projectId: string) => ipcRenderer.invoke(IPC.SKILLS_PROJECT_LIST, projectId),
+    toggle: (projectId: string, skillPath: string, active: boolean) =>
+      ipcRenderer.invoke(IPC.SKILLS_TOGGLE, projectId, skillPath, active),
+    setPriority: (projectId: string, skillPath: string, priority: number) =>
+      ipcRenderer.invoke(IPC.SKILLS_SET_PRIORITY, projectId, skillPath, priority)
   },
 
   // ─── Docs ─────────────────────────────────────────────────────────────────────
@@ -111,22 +121,60 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke(IPC.SCHEDULED_DELETE, id)
   },
 
+  // ─── Usage & Analytics ────────────────────────────────────────────────────────
+  usage: {
+    session: (sessionId: string) => ipcRenderer.invoke(IPC.USAGE_SESSION, sessionId),
+    weekly: (projectId?: string) => ipcRenderer.invoke(IPC.USAGE_WEEKLY, projectId),
+    project: (projectId: string) => ipcRenderer.invoke(IPC.USAGE_PROJECT, projectId),
+    dailyBreakdown: (days?: number, projectId?: string) =>
+      ipcRenderer.invoke(IPC.USAGE_DAILY_BREAKDOWN, days, projectId),
+    tools: (projectId?: string, days?: number) =>
+      ipcRenderer.invoke(IPC.USAGE_TOOLS, projectId, days),
+    context: (sessionId: string) => ipcRenderer.invoke(IPC.USAGE_CONTEXT, sessionId),
+    live: () => ipcRenderer.invoke(IPC.USAGE_LIVE)
+  },
+
+  // ─── Insights ─────────────────────────────────────────────────────────────────
+  insights: {
+    list: (projectId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.INSIGHTS_LIST, projectId, limit),
+    get: (id: string) => ipcRenderer.invoke(IPC.INSIGHTS_GET, id),
+    promoteLearning: (projectId: string, learning: string) =>
+      ipcRenderer.invoke(IPC.INSIGHTS_PROMOTE_LEARNING, projectId, learning)
+  },
+
+  // ─── App Settings ─────────────────────────────────────────────────────────────
+  settings: {
+    get: (key: string) => ipcRenderer.invoke(IPC.SETTINGS_GET, key),
+    set: (key: string, value: any) => ipcRenderer.invoke(IPC.SETTINGS_SET, key, value)
+  },
+
   // ─── System ───────────────────────────────────────────────────────────────────
   system: {
     openDialog: (options: any) => ipcRenderer.invoke(IPC.SYSTEM_OPEN_DIALOG, options),
-    openExternal: (url: string) => ipcRenderer.invoke(IPC.SYSTEM_OPEN_EXTERNAL, url)
+    openExternal: (url: string) => ipcRenderer.invoke(IPC.SYSTEM_OPEN_EXTERNAL, url),
+    claudeCheck: () => ipcRenderer.invoke(IPC.SYSTEM_CLAUDE_CHECK),
+    activeSessions: () => ipcRenderer.invoke(IPC.SYSTEM_ACTIVE_SESSIONS)
   },
 
   // ─── Event subscriptions ──────────────────────────────────────────────────────
   on: (
-    event: 'session-output' | 'task-status' | 'output-created' | 'git-changed',
+    event:
+      | 'session-output'
+      | 'task-status'
+      | 'output-created'
+      | 'git-changed'
+      | 'usage-update'
+      | 'session-health',
     callback: (...args: any[]) => void
   ): (() => void) => {
     const channelMap: Record<string, string> = {
       'session-output': IPC.EVENT_SESSION_OUTPUT,
       'task-status': IPC.EVENT_TASK_STATUS,
       'output-created': IPC.EVENT_OUTPUT_CREATED,
-      'git-changed': IPC.EVENT_GIT_CHANGED
+      'git-changed': IPC.EVENT_GIT_CHANGED,
+      'usage-update': IPC.EVENT_USAGE_UPDATE,
+      'session-health': IPC.EVENT_SESSION_HEALTH
     }
     const channel = channelMap[event]
     if (!channel) return () => {}

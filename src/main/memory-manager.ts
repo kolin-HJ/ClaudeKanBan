@@ -64,7 +64,6 @@ export class MemoryManager {
   }
 
   search(projectId: string, query: string): Memory[] {
-    // Use FTS5 to find matching rowids, then join back to memories
     const rows = getDb()
       .prepare(
         `SELECT m.* FROM memories m
@@ -76,7 +75,6 @@ export class MemoryManager {
       )
       .all(query, projectId) as any[]
 
-    // Update last_referenced for returned memories
     if (rows.length > 0) {
       const ids = rows.map((r) => `'${r.id}'`).join(',')
       getDb()
@@ -88,8 +86,6 @@ export class MemoryManager {
   }
 
   async generateContextBlock(projectId: string, taskDescription: string): Promise<string> {
-    // Get top relevant memories using FTS5 search on task description
-    // Fall back to listing all if search returns nothing
     let memories: Memory[] = []
 
     if (taskDescription.trim()) {
@@ -104,7 +100,12 @@ export class MemoryManager {
       memories = this.list(projectId).slice(0, 20)
     }
 
-    if (memories.length === 0) return ''
+    // Also include global patterns from other projects
+    const globalPatterns = this.getGlobalPatterns()
+    const projectPatternIds = new Set(memories.map((m) => m.id))
+    const uniqueGlobals = globalPatterns.filter((m) => !projectPatternIds.has(m.id)).slice(0, 5)
+
+    if (memories.length === 0 && uniqueGlobals.length === 0) return ''
 
     const grouped = groupByType(memories)
 
@@ -124,11 +125,18 @@ export class MemoryManager {
       lines.push('')
     }
 
+    if (uniqueGlobals.length > 0) {
+      lines.push('## Global Patterns (from other projects)')
+      for (const m of uniqueGlobals) {
+        lines.push(`- ${m.content}`)
+      }
+      lines.push('')
+    }
+
     return lines.join('\n')
   }
 
   captureFromTask(taskId: string): Memory[] {
-    // Get all claude messages from this task and extract potential memories
     const messages = getDb()
       .prepare(`SELECT content FROM messages WHERE task_id = ? AND role = 'claude' ORDER BY timestamp`)
       .all(taskId) as { content: string }[]
@@ -139,7 +147,6 @@ export class MemoryManager {
 
     if (!task || messages.length === 0) return []
 
-    // Extract observations from the last few messages (heuristic approach)
     const recentMessages = messages.slice(-3)
     const extracted: Memory[] = []
 
@@ -188,6 +195,133 @@ export class MemoryManager {
     mkdirSync(claudeDir, { recursive: true })
     writeFileSync(join(claudeDir, 'memories.md'), lines.join('\n'), 'utf-8')
   }
+
+  // ─── Enhanced: Consolidation ──────────────────────────────────────────────
+
+  consolidate(projectId: string): { merged: number; removed: number } {
+    const memories = this.list(projectId)
+    let merged = 0
+    let removed = 0
+
+    // Group by type to compare within the same type
+    const grouped = groupByType(memories)
+
+    for (const [, items] of Object.entries(grouped)) {
+      const toDelete: string[] = []
+
+      for (let i = 0; i < items.length; i++) {
+        if (toDelete.includes(items[i].id)) continue
+
+        for (let j = i + 1; j < items.length; j++) {
+          if (toDelete.includes(items[j].id)) continue
+
+          const similarity = computeSimilarity(items[i].content, items[j].content)
+          if (similarity > 0.7) {
+            // Keep the one with higher relevance score, merge content if needed
+            const keep = items[i].relevanceScore >= items[j].relevanceScore ? items[i] : items[j]
+            const remove = keep === items[i] ? items[j] : items[i]
+
+            // Boost relevance of kept memory
+            getDb()
+              .prepare(
+                `UPDATE memories SET relevance_score = MIN(relevance_score + 0.2, 2.0) WHERE id = ?`
+              )
+              .run(keep.id)
+
+            toDelete.push(remove.id)
+            merged++
+          }
+        }
+      }
+
+      // Soft-delete duplicates
+      for (const id of toDelete) {
+        this.delete(id)
+        removed++
+      }
+    }
+
+    return { merged, removed }
+  }
+
+  // ─── Enhanced: Decay ───────────────────────────────────────────────────────
+
+  decayRelevance(projectId: string): { decayed: number; pruned: number } {
+    // Reduce relevance for memories not referenced in 30+ days
+    const decayResult = getDb()
+      .prepare(
+        `UPDATE memories
+         SET relevance_score = relevance_score * 0.9
+         WHERE project_id = ?
+           AND deleted_at IS NULL
+           AND last_referenced < datetime('now', '-30 days')`
+      )
+      .run(projectId)
+
+    // Soft-delete memories with very low relevance
+    const pruneResult = getDb()
+      .prepare(
+        `UPDATE memories
+         SET deleted_at = datetime('now')
+         WHERE project_id = ?
+           AND deleted_at IS NULL
+           AND relevance_score < 0.1`
+      )
+      .run(projectId)
+
+    return {
+      decayed: decayResult.changes,
+      pruned: pruneResult.changes
+    }
+  }
+
+  // ─── Enhanced: Cross-Project Patterns ──────────────────────────────────────
+
+  getGlobalPatterns(): Memory[] {
+    const rows = getDb()
+      .prepare(
+        `SELECT * FROM memories
+         WHERE type IN ('pattern', 'convention')
+           AND deleted_at IS NULL
+           AND relevance_score >= 0.8
+         ORDER BY relevance_score DESC
+         LIMIT 20`
+      )
+      .all() as any[]
+
+    return rows.map(rowToMemory)
+  }
+
+  // ─── Enhanced: Import/Export ────────────────────────────────────────────────
+
+  exportMemories(projectId: string): any[] {
+    const memories = this.list(projectId)
+    return memories.map((m) => ({
+      type: m.type,
+      category: m.category,
+      content: m.content,
+      source: m.source,
+      relevanceScore: m.relevanceScore
+    }))
+  }
+
+  importMemories(projectId: string, data: any[]): number {
+    let imported = 0
+    for (const item of data) {
+      try {
+        this.create(projectId, {
+          type: item.type ?? 'project_context',
+          category: item.category,
+          content: item.content,
+          source: item.source ?? 'user_input'
+        })
+        imported++
+      } catch {
+        // skip invalid entries
+      }
+    }
+    return imported
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -230,7 +364,6 @@ function formatTypeName(type: MemoryType): string {
 function extractPatterns(content: string): string[] {
   const patterns: string[] = []
 
-  // Look for sentences that signal learnings
   const sentences = content.split(/[.!?]\s+/)
   for (const sentence of sentences) {
     const s = sentence.trim()
@@ -239,7 +372,8 @@ function extractPatterns(content: string): string[] {
     const signalWords = [
       'important', 'note:', 'remember', 'always', 'never', 'make sure',
       'convention', 'pattern', 'best practice', 'fixed', 'resolved',
-      'issue was', 'problem was', 'solution was', 'works by'
+      'issue was', 'problem was', 'solution was', 'works by',
+      'key takeaway', 'learned that', 'discovered'
     ]
 
     const lower = s.toLowerCase()
@@ -248,5 +382,21 @@ function extractPatterns(content: string): string[] {
     }
   }
 
-  return patterns.slice(0, 3) // Cap at 3 per message
+  return patterns.slice(0, 3)
+}
+
+function computeSimilarity(a: string, b: string): number {
+  // Simple Jaccard similarity on word sets
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter((w) => w.length > 3))
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter((w) => w.length > 3))
+
+  if (wordsA.size === 0 || wordsB.size === 0) return 0
+
+  let intersection = 0
+  for (const w of wordsA) {
+    if (wordsB.has(w)) intersection++
+  }
+
+  const union = wordsA.size + wordsB.size - intersection
+  return union > 0 ? intersection / union : 0
 }

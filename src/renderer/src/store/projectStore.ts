@@ -34,7 +34,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  setActiveProject: (id) => set({ activeProjectId: id }),
+  setActiveProject: (id) => {
+    const prev = get().activeProjectId
+    if (prev === id) return
+    // Tab state is saved/restored by ProjectTabs component via uiStore
+    set({ activeProjectId: id })
+  },
 
   addProject: async (name, path) => {
     const project = await api.projects.create(name, path)
