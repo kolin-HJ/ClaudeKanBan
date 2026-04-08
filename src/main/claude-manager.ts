@@ -1,5 +1,5 @@
 import { spawn, ChildProcess, execSync } from 'child_process'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, Notification } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
 import { IPC, SessionStatus } from '../shared/types'
@@ -12,12 +12,24 @@ const DEFAULT_PRICING = {
   cacheWritePerMillion: 3.75
 }
 
+// Security-sensitive tool patterns
+const DANGEROUS_TOOLS = new Set(['Bash', 'bash'])
+const SECRET_PATTERNS = [
+  /(?:api[_-]?key|token|secret|password|credential|auth)[\s=:]+['"]\S{8,}/gi,
+  /ghp_[A-Za-z0-9]{36}/g,
+  /sk-[A-Za-z0-9]{32,}/g,
+  /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/g,
+  /AWS[A-Z0-9]{16,}/g
+]
+
 interface SessionState {
   process: ChildProcess
   status: SessionStatus
   taskId: string
   projectId: string
   buffer: string
+  worktreePath?: string
+  worktreeBranch?: string
   // Usage tracking
   sessionDbId: string
   inputTokens: number
@@ -28,6 +40,11 @@ interface SessionState {
   filesCreated: string[]
   filesRead: string[]
   startedAt: number
+  // Security tracking
+  securityFlags: string[]
+  dangerousToolCount: number
+  // Checkpointing
+  checkpoints: { id: string; tokens: number; timestamp: number }[]
 }
 
 interface SpawnOptions {
@@ -40,6 +57,7 @@ interface SpawnOptions {
   memoryContext?: string
   skillsContext?: string
   envOverrides?: Record<string, string>
+  useWorktree?: boolean
 }
 
 // Callback type for generating insights after session finalization
@@ -76,7 +94,9 @@ export class ClaudeManager {
     this.locks.add(opts.taskId)
 
     try {
-      const args = ['--output-format', 'stream-json', '--print']
+      // Use interactive mode (NO --print) so the process stays alive for multi-turn conversations.
+      // --print makes Claude process one prompt and exit, breaking follow-up messages.
+      const args = ['--output-format', 'stream-json']
 
       if (opts.permission === 'full-auto') {
         args.push('--dangerously-skip-permissions')
@@ -100,8 +120,6 @@ export class ClaudeManager {
           '\n\nThis is a deep build task. Please start by creating a detailed plan with numbered phases, then execute each phase. Label each phase clearly in your responses.'
       }
 
-      args.push(prompt)
-
       // Create session record in DB
       const sessionDbId = uuidv4()
       getDb()
@@ -112,12 +130,36 @@ export class ClaudeManager {
 
       const env = { ...process.env, ...(opts.envOverrides ?? {}) }
 
+      // Set up git worktree isolation if requested
+      let workingDir = opts.projectPath
+      let worktreePath: string | undefined
+      let worktreeBranch: string | undefined
+
+      if (opts.useWorktree) {
+        try {
+          worktreeBranch = `task/${opts.taskId.slice(0, 8)}`
+          worktreePath = `${opts.projectPath}/.worktrees/${worktreeBranch}`
+          execSync(`git worktree add "${worktreePath}" -b "${worktreeBranch}" 2>/dev/null || git worktree add "${worktreePath}" "${worktreeBranch}"`, {
+            cwd: opts.projectPath,
+            timeout: 10000
+          })
+          workingDir = worktreePath
+        } catch {
+          // Fall back to main project dir if worktree creation fails
+          worktreePath = undefined
+          worktreeBranch = undefined
+        }
+      }
+
       const proc = spawn('claude', args, {
-        cwd: opts.projectPath,
+        cwd: workingDir,
         shell: true,
         stdio: ['pipe', 'pipe', 'pipe'],
         env
       })
+
+      // Send the initial prompt via stdin (instead of as positional arg with --print)
+      proc.stdin?.write(prompt + '\n')
 
       const state: SessionState = {
         process: proc,
@@ -125,6 +167,8 @@ export class ClaudeManager {
         taskId: opts.taskId,
         projectId: opts.projectId,
         buffer: '',
+        worktreePath,
+        worktreeBranch,
         sessionDbId,
         inputTokens: 0,
         outputTokens: 0,
@@ -133,7 +177,10 @@ export class ClaudeManager {
         toolsUsed: [],
         filesCreated: [],
         filesRead: [],
-        startedAt: Date.now()
+        startedAt: Date.now(),
+        securityFlags: [],
+        dangerousToolCount: 0,
+        checkpoints: []
       }
       this.sessions.set(opts.taskId, state)
 
@@ -228,6 +275,18 @@ export class ClaudeManager {
     } catch {
       // DB write failure shouldn't crash the app
     }
+
+    // Save final checkpoint
+    this.saveCheckpoint(state)
+
+    // Save security posture score
+    this.saveSecurityScore(state)
+
+    // Send OS notification
+    this.sendNotification(state, status, cost, durationSecs)
+
+    // Check for cost anomaly
+    this.checkCostAnomaly(state, cost)
 
     // Broadcast final usage update
     this.broadcast(IPC.EVENT_USAGE_UPDATE, {
@@ -373,6 +432,25 @@ export class ClaudeManager {
         // Track context events (file reads, searches, etc.)
         this.trackContextEvent(state, tool)
 
+        // Security: track dangerous tool usage
+        if (DANGEROUS_TOOLS.has(tool.name)) {
+          state.dangerousToolCount++
+          const cmd = tool.input?.command ?? ''
+          if (/rm\s+-rf|sudo|chmod\s+777|curl.*\|.*sh/i.test(cmd)) {
+            state.securityFlags.push(`Dangerous bash: ${cmd.slice(0, 100)}`)
+          }
+        }
+
+        // Security: scan tool inputs for secrets
+        const inputStr = JSON.stringify(tool.input ?? '')
+        for (const pattern of SECRET_PATTERNS) {
+          if (pattern.test(inputStr)) {
+            state.securityFlags.push(`Possible secret exposure in ${tool.name}`)
+            pattern.lastIndex = 0 // Reset regex state
+            break
+          }
+        }
+
         // Record file writes as outputs
         if (tool.name === 'Write' || tool.name === 'write_file') {
           const filePath = tool.input?.file_path ?? tool.input?.path
@@ -380,6 +458,13 @@ export class ClaudeManager {
             state.filesCreated.push(filePath)
             this.recordOutput(state.taskId, filePath)
           }
+        }
+
+        // Auto-checkpoint every 50k tokens
+        const totalTokens = state.inputTokens + state.outputTokens
+        const lastCheckpoint = state.checkpoints[state.checkpoints.length - 1]
+        if (!lastCheckpoint || totalTokens - lastCheckpoint.tokens > 50000) {
+          this.saveCheckpoint(state)
         }
       }
       return
@@ -608,6 +693,163 @@ export class ClaudeManager {
       return { available: true, version }
     } catch {
       return { available: false, error: 'Claude CLI not found in PATH' }
+    }
+  }
+
+  // ─── Notifications ────────────────────────────────────────────────────────
+
+  private sendNotification(
+    state: SessionState,
+    status: string,
+    cost: number,
+    durationSecs: number
+  ): void {
+    if (!Notification.isSupported()) return
+    try {
+      const title =
+        status === 'completed'
+          ? 'Session Complete'
+          : status === 'error'
+            ? 'Session Error'
+            : 'Session Terminated'
+      const mins = Math.round(durationSecs / 60)
+      const tokens = state.inputTokens + state.outputTokens
+      const body =
+        status === 'completed'
+          ? `Done in ${mins}m | ${tokens.toLocaleString()} tokens | $${cost.toFixed(4)}`
+          : status === 'error'
+            ? `Session failed after ${mins}m`
+            : `Session stopped after ${mins}m`
+
+      new Notification({ title, body, silent: false }).show()
+    } catch {
+      // Notification failures are non-critical
+    }
+  }
+
+  // ─── Checkpointing ──────────────────────────────────────────────────────
+
+  private saveCheckpoint(state: SessionState): void {
+    const totalTokens = state.inputTokens + state.outputTokens
+    const checkpointId = uuidv4()
+    state.checkpoints.push({
+      id: checkpointId,
+      tokens: totalTokens,
+      timestamp: Date.now()
+    })
+
+    try {
+      getDb()
+        .prepare(
+          `INSERT INTO session_checkpoints (id, session_id, input_tokens, output_tokens,
+            tools_used_json, files_created_json, files_read_json, security_flags_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          checkpointId,
+          state.sessionDbId,
+          state.inputTokens,
+          state.outputTokens,
+          JSON.stringify(state.toolsUsed),
+          JSON.stringify(state.filesCreated),
+          JSON.stringify(state.filesRead),
+          JSON.stringify(state.securityFlags)
+        )
+    } catch {
+      // ignore
+    }
+  }
+
+  // ─── Security Posture ───────────────────────────────────────────────────
+
+  private saveSecurityScore(state: SessionState): void {
+    // Score 0-100: 100 = perfectly safe, lower = more concerning
+    let score = 100
+
+    // Penalize dangerous tool usage
+    score -= Math.min(state.dangerousToolCount * 5, 30)
+
+    // Penalize security flags
+    score -= Math.min(state.securityFlags.length * 15, 50)
+
+    // Penalize full-auto permission (it's riskier)
+    // Check from the task
+    try {
+      const task = getDb()
+        .prepare('SELECT permission FROM tasks WHERE id = ?')
+        .get(state.taskId) as any
+      if (task?.permission === 'full-auto') {
+        score -= 10
+      }
+    } catch {
+      // ignore
+    }
+
+    score = Math.max(0, score)
+
+    try {
+      getDb()
+        .prepare(
+          `INSERT INTO security_scores (id, session_id, project_id, score,
+            flags_json, dangerous_tool_count)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          uuidv4(),
+          state.sessionDbId,
+          state.projectId,
+          score,
+          JSON.stringify(state.securityFlags),
+          state.dangerousToolCount
+        )
+    } catch {
+      // ignore
+    }
+  }
+
+  // ─── Cost Anomaly Detection ─────────────────────────────────────────────
+
+  private checkCostAnomaly(state: SessionState, cost: number): void {
+    try {
+      // Get average cost of recent sessions for this project
+      const avg = getDb()
+        .prepare(
+          `SELECT AVG(total_cost_usd) as avg_cost
+           FROM sessions
+           WHERE project_id = ? AND status = 'completed'
+             AND total_cost_usd > 0
+             AND id != ?
+           ORDER BY started_at DESC
+           LIMIT 20`
+        )
+        .get(state.projectId, state.sessionDbId) as any
+
+      if (!avg?.avg_cost || avg.avg_cost === 0) return
+
+      const ratio = cost / avg.avg_cost
+      if (ratio > 5.0) {
+        // 5x above average = anomaly
+        const msg = `Cost anomaly: $${cost.toFixed(4)} is ${ratio.toFixed(1)}x above average ($${avg.avg_cost.toFixed(4)})`
+        this.broadcast(IPC.EVENT_SESSION_OUTPUT, {
+          taskId: state.taskId,
+          type: 'warning',
+          text: msg
+        })
+
+        if (Notification.isSupported()) {
+          try {
+            new Notification({
+              title: 'Cost Anomaly Detected',
+              body: msg,
+              silent: false
+            }).show()
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // ignore
     }
   }
 

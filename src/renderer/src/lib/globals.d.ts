@@ -93,6 +93,14 @@ interface ElectronAPI {
     get(id: string): Promise<any>
     promoteLearning(projectId: string, learning: string): Promise<void>
   }
+  checkpoints: {
+    list(sessionId: string): Promise<any[]>
+    get(checkpointId: string): Promise<any>
+  }
+  security: {
+    score(sessionId: string): Promise<any>
+    projectScores(projectId: string, limit?: number): Promise<any[]>
+  }
   settings: {
     get(key: string): Promise<any>
     set(key: string, value: any): Promise<void>

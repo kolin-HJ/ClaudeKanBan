@@ -223,4 +223,32 @@ const migration002 = `
     key   TEXT PRIMARY KEY,
     value TEXT
   );
+
+  -- Session checkpoints for time-travel / replay
+  CREATE TABLE IF NOT EXISTS session_checkpoints (
+    id                TEXT PRIMARY KEY,
+    session_id        TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    input_tokens      INTEGER DEFAULT 0,
+    output_tokens     INTEGER DEFAULT 0,
+    tools_used_json   TEXT,
+    files_created_json TEXT,
+    files_read_json   TEXT,
+    security_flags_json TEXT,
+    created_at        TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON session_checkpoints(session_id, created_at);
+
+  -- Security posture scores per session
+  CREATE TABLE IF NOT EXISTS security_scores (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    project_id           TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    score                INTEGER DEFAULT 100,
+    flags_json           TEXT,
+    dangerous_tool_count INTEGER DEFAULT 0,
+    created_at           TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_security_project ON security_scores(project_id, created_at);
 `

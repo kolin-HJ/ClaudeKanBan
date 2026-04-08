@@ -37,6 +37,8 @@ export function registerIpcHandlers(): void {
   registerScheduledHandlers()
   registerUsageHandlers()
   registerInsightsHandlers()
+  registerCheckpointHandlers()
+  registerSecurityHandlers()
   registerSettingsHandlers()
   registerSystemHandlers()
 }
@@ -189,6 +191,17 @@ function registerSessionHandlers(): void {
       // ignore skills errors
     }
 
+    // Check if worktree isolation is enabled
+    let useWorktree = false
+    try {
+      const worktreeSetting = getDb()
+        .prepare("SELECT value FROM app_settings WHERE key = 'useWorktreeIsolation'")
+        .get() as any
+      useWorktree = worktreeSetting?.value === 'true'
+    } catch {
+      // ignore
+    }
+
     await claudeManager.spawn({
       taskId,
       projectPath: project.path,
@@ -197,7 +210,8 @@ function registerSessionHandlers(): void {
       depth: task.depth,
       permission: task.permission,
       memoryContext,
-      skillsContext
+      skillsContext,
+      useWorktree
     })
   })
 
@@ -788,6 +802,88 @@ function registerInsightsHandlers(): void {
 
   ipcMain.handle(IPC.INSIGHTS_PROMOTE_LEARNING, (_e, projectId: string, learning: string) => {
     return insightsManager.promoteLearning(projectId, learning)
+  })
+}
+
+// ─── Checkpoints ──────────────────────────────────────────────────────────────
+
+function registerCheckpointHandlers(): void {
+  ipcMain.handle(IPC.CHECKPOINTS_LIST, (_e, sessionId: string) => {
+    const rows = getDb()
+      .prepare('SELECT * FROM session_checkpoints WHERE session_id = ? ORDER BY created_at ASC')
+      .all(sessionId) as any[]
+    return rows.map((r: any) => ({
+      id: r.id,
+      sessionId: r.session_id,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      toolsUsedJson: r.tools_used_json,
+      filesCreatedJson: r.files_created_json,
+      filesReadJson: r.files_read_json,
+      securityFlagsJson: r.security_flags_json,
+      createdAt: r.created_at
+    }))
+  })
+
+  ipcMain.handle(IPC.CHECKPOINTS_GET, (_e, checkpointId: string) => {
+    const row = getDb()
+      .prepare('SELECT * FROM session_checkpoints WHERE id = ?')
+      .get(checkpointId) as any
+    if (!row) return null
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+      toolsUsedJson: row.tools_used_json,
+      filesCreatedJson: row.files_created_json,
+      filesReadJson: row.files_read_json,
+      securityFlagsJson: row.security_flags_json,
+      createdAt: row.created_at
+    }
+  })
+}
+
+// ─── Security ─────────────────────────────────────────────────────────────────
+
+function registerSecurityHandlers(): void {
+  ipcMain.handle(IPC.SECURITY_SCORE, (_e, sessionId: string) => {
+    const row = getDb()
+      .prepare('SELECT * FROM security_scores WHERE session_id = ?')
+      .get(sessionId) as any
+    if (!row) return null
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      projectId: row.project_id,
+      score: row.score,
+      flagsJson: row.flags_json,
+      dangerousToolCount: row.dangerous_tool_count,
+      createdAt: row.created_at
+    }
+  })
+
+  ipcMain.handle(IPC.SECURITY_PROJECT_SCORES, (_e, projectId: string, limit = 20) => {
+    const rows = getDb()
+      .prepare(
+        `SELECT ss.*, s.task_id, t.title as task_title
+         FROM security_scores ss
+         JOIN sessions s ON s.id = ss.session_id
+         JOIN tasks t ON t.id = s.task_id
+         WHERE ss.project_id = ?
+         ORDER BY ss.created_at DESC LIMIT ?`
+      )
+      .all(projectId, limit) as any[]
+    return rows.map((r: any) => ({
+      id: r.id,
+      sessionId: r.session_id,
+      projectId: r.project_id,
+      score: r.score,
+      flagsJson: r.flags_json,
+      dangerousToolCount: r.dangerous_tool_count,
+      createdAt: r.created_at,
+      taskTitle: r.task_title
+    }))
   })
 }
 

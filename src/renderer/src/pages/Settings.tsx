@@ -11,6 +11,7 @@ export default function Settings() {
   } | null>(null)
   const [maxSessions, setMaxSessions] = useState(10)
   const [defaultPermission, setDefaultPermission] = useState('default')
+  const [useWorktree, setUseWorktree] = useState(false)
   const [activeSessions, setActiveSessions] = useState<any[]>([])
 
   useEffect(() => {
@@ -21,6 +22,9 @@ export default function Settings() {
     // Load settings
     api.settings.get('maxConcurrentSessions').then((v: any) => {
       if (v) setMaxSessions(v)
+    })
+    api.settings.get('useWorktreeIsolation').then((v: any) => {
+      if (v === 'true' || v === true) setUseWorktree(true)
     })
     api.settings.get('defaultPermission').then((v: any) => {
       if (v) setDefaultPermission(v)
@@ -129,6 +133,22 @@ export default function Settings() {
               Save
             </button>
           </div>
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useWorktree}
+              onChange={(e) => {
+                setUseWorktree(e.target.checked)
+                api.settings.set('useWorktreeIsolation', e.target.checked ? 'true' : 'false')
+              }}
+              className="w-4 h-4 rounded accent-violet-500"
+            />
+            <div>
+              <span className="text-xs text-slate-300">Git Worktree Isolation</span>
+              <p className="text-xs text-slate-500">Each task gets its own git branch via worktree. Prevents conflicts with parallel agents.</p>
+            </div>
+          </label>
 
           <div className="flex items-center gap-3">
             <label className="text-xs text-slate-400 shrink-0">Default Permission</label>

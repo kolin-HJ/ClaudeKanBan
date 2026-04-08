@@ -192,6 +192,28 @@ export interface LiveSessionUsage {
   startedAt: number
 }
 
+export interface SessionCheckpoint {
+  id: string
+  sessionId: string
+  inputTokens: number
+  outputTokens: number
+  toolsUsedJson?: string
+  filesCreatedJson?: string
+  filesReadJson?: string
+  securityFlagsJson?: string
+  createdAt: string
+}
+
+export interface SecurityScore {
+  id: string
+  sessionId: string
+  projectId: string
+  score: number
+  flagsJson?: string
+  dangerousToolCount: number
+  createdAt: string
+}
+
 // IPC channel names
 export const IPC = {
   PROJECTS_LIST: 'projects:list',
@@ -280,6 +302,14 @@ export const IPC = {
   SKILLS_PROJECT_LIST: 'skills:projectList',
   SKILLS_TOGGLE: 'skills:toggle',
   SKILLS_SET_PRIORITY: 'skills:setPriority',
+
+  // Checkpoints
+  CHECKPOINTS_LIST: 'checkpoints:list',
+  CHECKPOINTS_GET: 'checkpoints:get',
+
+  // Security
+  SECURITY_SCORE: 'security:score',
+  SECURITY_PROJECT_SCORES: 'security:projectScores',
 
   // App settings
   SETTINGS_GET: 'settings:get',

@@ -143,6 +143,19 @@ const api = {
       ipcRenderer.invoke(IPC.INSIGHTS_PROMOTE_LEARNING, projectId, learning)
   },
 
+  // ─── Checkpoints ────────────────────────────────────────────────────────────
+  checkpoints: {
+    list: (sessionId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_LIST, sessionId),
+    get: (checkpointId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_GET, checkpointId)
+  },
+
+  // ─── Security ──────────────────────────────────────────────────────────────
+  security: {
+    score: (sessionId: string) => ipcRenderer.invoke(IPC.SECURITY_SCORE, sessionId),
+    projectScores: (projectId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.SECURITY_PROJECT_SCORES, projectId, limit)
+  },
+
   // ─── App Settings ─────────────────────────────────────────────────────────────
   settings: {
     get: (key: string) => ipcRenderer.invoke(IPC.SETTINGS_GET, key),
