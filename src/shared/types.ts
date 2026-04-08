@@ -16,6 +16,7 @@ export type MemoryCategory =
 export type MemoryLayer = 0 | 1 | 2 | 3
 export type MemoryLinkRelationship = 'related' | 'contradicts' | 'extends' | 'supersedes'
 export type SessionStatus = 'spawning' | 'running' | 'waiting-input' | 'completed' | 'error'
+export type SessionDbStatus = 'running' | 'completed' | 'error' | 'terminated'
 
 export interface Project {
   id: string
@@ -35,6 +36,8 @@ export interface Task {
   permission: TaskPermission
   createdAt: string
   updatedAt: string
+  asanaGid?: string
+  asanaPermalink?: string
 }
 
 export interface Message {
@@ -73,6 +76,12 @@ export interface Memory {
   referenceCount: number
   createdAt: string
   lastReferenced: string
+  // Palace fields
+  wing?: string
+  room?: string
+  hall?: string
+  importance?: number
+  addedBy?: string
 }
 
 export interface MemoryLink {
@@ -128,6 +137,121 @@ export interface Skill {
   content: string
   category?: string
   referenceFiles: string[]
+}
+
+export interface SessionRecord {
+  id: string
+  taskId: string
+  projectId: string
+  startedAt: string
+  endedAt?: string
+  status: SessionDbStatus
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  totalCostUsd: number
+  durationSecs: number
+}
+
+export interface ToolUsageRecord {
+  id: string
+  sessionId: string
+  toolName: string
+  inputJson?: string
+  timestamp: string
+}
+
+export interface ContextEvent {
+  id: string
+  sessionId: string
+  eventType: string
+  target?: string
+  timestamp: string
+}
+
+export interface SessionInsight {
+  id: string
+  sessionId: string
+  projectId: string
+  taskId: string
+  tokenInput: number
+  tokenOutput: number
+  costUsd: number
+  durationSecs: number
+  toolsJson?: string
+  filesReadJson?: string
+  filesCreatedJson?: string
+  learningsJson?: string
+  summary?: string
+  createdAt: string
+}
+
+export interface ProjectSkillConfig {
+  id: string
+  projectId: string
+  skillPath: string
+  active: boolean
+  priority: number
+}
+
+export interface UsageSummary {
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCostUsd: number
+  sessionCount: number
+  totalDurationSecs: number
+}
+
+export interface ToolFrequency {
+  toolName: string
+  count: number
+}
+
+export interface LiveSessionUsage {
+  taskId: string
+  sessionId: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  estimatedCostUsd: number
+  toolsUsed: string[]
+  startedAt: number
+}
+
+export interface AsanaTaskRef {
+  gid: string
+  name: string
+  notes: string
+  completed: boolean
+  dueOn?: string
+  assigneeName?: string
+  sectionName?: string
+  tags?: string[]
+  permalink?: string
+}
+
+export interface SessionCheckpoint {
+  id: string
+  sessionId: string
+  inputTokens: number
+  outputTokens: number
+  toolsUsedJson?: string
+  filesCreatedJson?: string
+  filesReadJson?: string
+  securityFlagsJson?: string
+  createdAt: string
+}
+
+export interface SecurityScore {
+  id: string
+  sessionId: string
+  projectId: string
+  score: number
+  flagsJson?: string
+  dangerousToolCount: number
+  createdAt: string
 }
 
 // IPC channel names
@@ -199,9 +323,91 @@ export const IPC = {
   SYSTEM_OPEN_DIALOG: 'system:openDialog',
   SYSTEM_OPEN_EXTERNAL: 'system:openExternal',
 
+  // Usage & analytics
+  USAGE_SESSION: 'usage:session',
+  USAGE_WEEKLY: 'usage:weekly',
+  USAGE_PROJECT: 'usage:project',
+  USAGE_DAILY_BREAKDOWN: 'usage:dailyBreakdown',
+  USAGE_TOOLS: 'usage:tools',
+  USAGE_CONTEXT: 'usage:context',
+  USAGE_LIVE: 'usage:live',
+
+  // Insights
+  INSIGHTS_LIST: 'insights:list',
+  INSIGHTS_GET: 'insights:get',
+  INSIGHTS_PROMOTE_LEARNING: 'insights:promoteLearning',
+
+  // Enhanced memory
+  MEMORY_CONSOLIDATE: 'memory:consolidate',
+  MEMORY_EXPORT: 'memory:export',
+  MEMORY_IMPORT: 'memory:import',
+  MEMORY_GLOBAL_PATTERNS: 'memory:globalPatterns',
+
+  // Enhanced skills (per-project)
+  SKILLS_PROJECT_LIST: 'skills:projectList',
+  SKILLS_TOGGLE: 'skills:toggle',
+  SKILLS_SET_PRIORITY: 'skills:setPriority',
+
+  // Checkpoints
+  CHECKPOINTS_LIST: 'checkpoints:list',
+  CHECKPOINTS_GET: 'checkpoints:get',
+
+  // Security
+  SECURITY_SCORE: 'security:score',
+  SECURITY_PROJECT_SCORES: 'security:projectScores',
+
+  // Palace (mempalace architecture)
+  PALACE_IDENTITY_GET: 'palace:identityGet',
+  PALACE_IDENTITY_SET: 'palace:identitySet',
+  PALACE_ROOMS: 'palace:rooms',
+  PALACE_DETECT_ROOMS: 'palace:detectRooms',
+  PALACE_STATS: 'palace:stats',
+  PALACE_GRAPH: 'palace:graph',
+  PALACE_TRAVERSE: 'palace:traverse',
+  PALACE_TUNNELS: 'palace:tunnels',
+  PALACE_SEARCH: 'palace:search',
+  PALACE_DUPLICATE_CHECK: 'palace:duplicateCheck',
+
+  // Knowledge Graph
+  KG_ADD_ENTITY: 'kg:addEntity',
+  KG_LIST_ENTITIES: 'kg:listEntities',
+  KG_ADD_TRIPLE: 'kg:addTriple',
+  KG_INVALIDATE: 'kg:invalidate',
+  KG_QUERY_ENTITY: 'kg:queryEntity',
+  KG_QUERY_RELATIONSHIP: 'kg:queryRelationship',
+  KG_TIMELINE: 'kg:timeline',
+  KG_STATS: 'kg:stats',
+
+  // Agent Diary
+  DIARY_WRITE: 'diary:write',
+  DIARY_READ: 'diary:read',
+  DIARY_READ_BY_TOPIC: 'diary:readByTopic',
+
+  // Asana integration
+  ASANA_VERIFY: 'asana:verify',
+  ASANA_SET_TOKEN: 'asana:setToken',
+  ASANA_GET_TOKEN: 'asana:getToken',
+  ASANA_WORKSPACES: 'asana:workspaces',
+  ASANA_PROJECTS: 'asana:projects',
+  ASANA_SECTIONS: 'asana:sections',
+  ASANA_TASKS: 'asana:tasks',
+  ASANA_TASK_DETAIL: 'asana:taskDetail',
+  ASANA_COMPLETE_TASK: 'asana:completeTask',
+  ASANA_ADD_COMMENT: 'asana:addComment',
+
+  // App settings
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
+
+  // System health
+  SYSTEM_CLAUDE_CHECK: 'system:claudeCheck',
+  SYSTEM_ACTIVE_SESSIONS: 'system:activeSessions',
+
   // Events pushed from main → renderer
   EVENT_SESSION_OUTPUT: 'event:sessionOutput',
   EVENT_TASK_STATUS: 'event:taskStatus',
   EVENT_OUTPUT_CREATED: 'event:outputCreated',
-  EVENT_GIT_CHANGED: 'event:gitChanged'
+  EVENT_GIT_CHANGED: 'event:gitChanged',
+  EVENT_USAGE_UPDATE: 'event:usageUpdate',
+  EVENT_SESSION_HEALTH: 'event:sessionHealth'
 } as const

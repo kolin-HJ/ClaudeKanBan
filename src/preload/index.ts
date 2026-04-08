@@ -87,7 +87,12 @@ const api = {
     linksCreate: (sourceId: string, targetId: string, relationship: string) =>
       ipcRenderer.invoke(IPC.MEMORY_LINKS_CREATE, sourceId, targetId, relationship),
     linksDelete: (linkId: string) => ipcRenderer.invoke(IPC.MEMORY_LINKS_DELETE, linkId),
-    export: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_EXPORT, projectId)
+    consolidate: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_CONSOLIDATE, projectId),
+    export: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_EXPORT, projectId),
+    exportMemories: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_EXPORT, projectId),
+    importMemories: (projectId: string, data: any[]) =>
+      ipcRenderer.invoke(IPC.MEMORY_IMPORT, projectId, data),
+    globalPatterns: () => ipcRenderer.invoke(IPC.MEMORY_GLOBAL_PATTERNS)
   },
 
   // ─── Skills ───────────────────────────────────────────────────────────────────
@@ -98,7 +103,12 @@ const api = {
       ipcRenderer.invoke(IPC.SKILLS_UPDATE, filePath, content),
     create: (name: string, content: string, targetDir: string) =>
       ipcRenderer.invoke(IPC.SKILLS_CREATE, name, content, targetDir),
-    fetchUrl: (url: string) => ipcRenderer.invoke(IPC.SKILLS_FETCH_URL, url)
+    fetchUrl: (url: string) => ipcRenderer.invoke(IPC.SKILLS_FETCH_URL, url),
+    projectList: (projectId: string) => ipcRenderer.invoke(IPC.SKILLS_PROJECT_LIST, projectId),
+    toggle: (projectId: string, skillPath: string, active: boolean) =>
+      ipcRenderer.invoke(IPC.SKILLS_TOGGLE, projectId, skillPath, active),
+    setPriority: (projectId: string, skillPath: string, priority: number) =>
+      ipcRenderer.invoke(IPC.SKILLS_SET_PRIORITY, projectId, skillPath, priority)
   },
 
   // ─── Docs ─────────────────────────────────────────────────────────────────────
@@ -117,22 +127,136 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke(IPC.SCHEDULED_DELETE, id)
   },
 
+  // ─── Usage & Analytics ────────────────────────────────────────────────────────
+  usage: {
+    session: (sessionId: string) => ipcRenderer.invoke(IPC.USAGE_SESSION, sessionId),
+    weekly: (projectId?: string) => ipcRenderer.invoke(IPC.USAGE_WEEKLY, projectId),
+    project: (projectId: string) => ipcRenderer.invoke(IPC.USAGE_PROJECT, projectId),
+    dailyBreakdown: (days?: number, projectId?: string) =>
+      ipcRenderer.invoke(IPC.USAGE_DAILY_BREAKDOWN, days, projectId),
+    tools: (projectId?: string, days?: number) =>
+      ipcRenderer.invoke(IPC.USAGE_TOOLS, projectId, days),
+    context: (sessionId: string) => ipcRenderer.invoke(IPC.USAGE_CONTEXT, sessionId),
+    live: () => ipcRenderer.invoke(IPC.USAGE_LIVE)
+  },
+
+  // ─── Insights ─────────────────────────────────────────────────────────────────
+  insights: {
+    list: (projectId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.INSIGHTS_LIST, projectId, limit),
+    get: (id: string) => ipcRenderer.invoke(IPC.INSIGHTS_GET, id),
+    promoteLearning: (projectId: string, learning: string) =>
+      ipcRenderer.invoke(IPC.INSIGHTS_PROMOTE_LEARNING, projectId, learning)
+  },
+
+  // ─── Palace (MemPalace Architecture) ────────────────────────────────────────
+  palace: {
+    identityGet: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_IDENTITY_GET, projectId),
+    identitySet: (projectId: string, content: string) =>
+      ipcRenderer.invoke(IPC.PALACE_IDENTITY_SET, projectId, content),
+    rooms: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_ROOMS, projectId),
+    detectRooms: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_DETECT_ROOMS, projectId),
+    stats: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_STATS, projectId),
+    graph: (projectId?: string) => ipcRenderer.invoke(IPC.PALACE_GRAPH, projectId),
+    traverse: (startRoom: string, maxHops?: number) =>
+      ipcRenderer.invoke(IPC.PALACE_TRAVERSE, startRoom, maxHops),
+    tunnels: (wingA?: string, wingB?: string) =>
+      ipcRenderer.invoke(IPC.PALACE_TUNNELS, wingA, wingB),
+    search: (projectId: string, query: string, opts?: any) =>
+      ipcRenderer.invoke(IPC.PALACE_SEARCH, projectId, query, opts),
+    duplicateCheck: (projectId: string, content: string, wing?: string, room?: string) =>
+      ipcRenderer.invoke(IPC.PALACE_DUPLICATE_CHECK, projectId, content, wing, room)
+  },
+
+  // ─── Knowledge Graph ───────────────────────────────────────────────────────
+  kg: {
+    addEntity: (name: string, entityType: string, properties?: any) =>
+      ipcRenderer.invoke(IPC.KG_ADD_ENTITY, name, entityType, properties),
+    listEntities: (entityType?: string) =>
+      ipcRenderer.invoke(IPC.KG_LIST_ENTITIES, entityType),
+    addTriple: (subject: string, predicate: string, object: string, opts?: any) =>
+      ipcRenderer.invoke(IPC.KG_ADD_TRIPLE, subject, predicate, object, opts),
+    invalidate: (subject: string, predicate: string, object: string, ended?: string) =>
+      ipcRenderer.invoke(IPC.KG_INVALIDATE, subject, predicate, object, ended),
+    queryEntity: (name: string, opts?: any) =>
+      ipcRenderer.invoke(IPC.KG_QUERY_ENTITY, name, opts),
+    queryRelationship: (predicate: string, asOf?: string) =>
+      ipcRenderer.invoke(IPC.KG_QUERY_RELATIONSHIP, predicate, asOf),
+    timeline: (entityName: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.KG_TIMELINE, entityName, limit),
+    stats: () => ipcRenderer.invoke(IPC.KG_STATS)
+  },
+
+  // ─── Agent Diary ───────────────────────────────────────────────────────────
+  diary: {
+    write: (opts: any) => ipcRenderer.invoke(IPC.DIARY_WRITE, opts),
+    read: (projectId: string, agentName?: string, lastN?: number) =>
+      ipcRenderer.invoke(IPC.DIARY_READ, projectId, agentName, lastN),
+    readByTopic: (projectId: string, topic: string, lastN?: number) =>
+      ipcRenderer.invoke(IPC.DIARY_READ_BY_TOPIC, projectId, topic, lastN)
+  },
+
+  // ─── Asana ─────────────────────────────────────────────────────────────────
+  asana: {
+    verify: () => ipcRenderer.invoke(IPC.ASANA_VERIFY),
+    setToken: (token: string) => ipcRenderer.invoke(IPC.ASANA_SET_TOKEN, token),
+    getToken: () => ipcRenderer.invoke(IPC.ASANA_GET_TOKEN),
+    workspaces: () => ipcRenderer.invoke(IPC.ASANA_WORKSPACES),
+    projects: (workspaceGid: string) => ipcRenderer.invoke(IPC.ASANA_PROJECTS, workspaceGid),
+    sections: (projectGid: string) => ipcRenderer.invoke(IPC.ASANA_SECTIONS, projectGid),
+    tasks: (projectGid: string) => ipcRenderer.invoke(IPC.ASANA_TASKS, projectGid),
+    taskDetail: (taskGid: string) => ipcRenderer.invoke(IPC.ASANA_TASK_DETAIL, taskGid),
+    completeTask: (taskGid: string, comment?: string) =>
+      ipcRenderer.invoke(IPC.ASANA_COMPLETE_TASK, taskGid, comment),
+    addComment: (taskGid: string, text: string) =>
+      ipcRenderer.invoke(IPC.ASANA_ADD_COMMENT, taskGid, text)
+  },
+
+  // ─── Checkpoints ────────────────────────────────────────────────────────────
+  checkpoints: {
+    list: (sessionId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_LIST, sessionId),
+    get: (checkpointId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_GET, checkpointId)
+  },
+
+  // ─── Security ──────────────────────────────────────────────────────────────
+  security: {
+    score: (sessionId: string) => ipcRenderer.invoke(IPC.SECURITY_SCORE, sessionId),
+    projectScores: (projectId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.SECURITY_PROJECT_SCORES, projectId, limit)
+  },
+
+  // ─── App Settings ─────────────────────────────────────────────────────────────
+  settings: {
+    get: (key: string) => ipcRenderer.invoke(IPC.SETTINGS_GET, key),
+    set: (key: string, value: any) => ipcRenderer.invoke(IPC.SETTINGS_SET, key, value)
+  },
+
   // ─── System ───────────────────────────────────────────────────────────────────
   system: {
     openDialog: (options: any) => ipcRenderer.invoke(IPC.SYSTEM_OPEN_DIALOG, options),
-    openExternal: (url: string) => ipcRenderer.invoke(IPC.SYSTEM_OPEN_EXTERNAL, url)
+    openExternal: (url: string) => ipcRenderer.invoke(IPC.SYSTEM_OPEN_EXTERNAL, url),
+    claudeCheck: () => ipcRenderer.invoke(IPC.SYSTEM_CLAUDE_CHECK),
+    activeSessions: () => ipcRenderer.invoke(IPC.SYSTEM_ACTIVE_SESSIONS)
   },
 
   // ─── Event subscriptions ──────────────────────────────────────────────────────
   on: (
-    event: 'session-output' | 'task-status' | 'output-created' | 'git-changed',
+    event:
+      | 'session-output'
+      | 'task-status'
+      | 'output-created'
+      | 'git-changed'
+      | 'usage-update'
+      | 'session-health',
     callback: (...args: any[]) => void
   ): (() => void) => {
     const channelMap: Record<string, string> = {
       'session-output': IPC.EVENT_SESSION_OUTPUT,
       'task-status': IPC.EVENT_TASK_STATUS,
       'output-created': IPC.EVENT_OUTPUT_CREATED,
-      'git-changed': IPC.EVENT_GIT_CHANGED
+      'git-changed': IPC.EVENT_GIT_CHANGED,
+      'usage-update': IPC.EVENT_USAGE_UPDATE,
+      'session-health': IPC.EVENT_SESSION_HEALTH
     }
     const channel = channelMap[event]
     if (!channel) return () => {}

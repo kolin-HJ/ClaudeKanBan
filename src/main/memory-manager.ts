@@ -2,17 +2,20 @@ import { v4 as uuidv4 } from 'uuid'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { getDb } from './db'
-import { Memory, MemoryType, MemoryCategory, MemoryLayer, MemoryLink, MemoryLinkRelationship } from '../shared/types'
+import { Memory, MemoryType, MemoryCategory } from '../shared/types'
+import { detectRoomForContent, classifyHall, getWingName } from './room-detector'
 
 interface CreateMemoryOpts {
   type: MemoryType
   category?: MemoryCategory
-  room?: string
-  layer?: MemoryLayer
   content: string
-  verbatim?: string
   source?: 'user_input' | 'claude_note' | 'inferred'
   taskId?: string
+  wing?: string
+  room?: string
+  hall?: string
+  importance?: number
+  addedBy?: string
 }
 
 export class MemoryManager {
@@ -25,7 +28,7 @@ export class MemoryManager {
       .prepare(
         `SELECT * FROM memories
          WHERE project_id = ? AND deleted_at IS NULL
-         ORDER BY layer ASC, relevance_score DESC, last_referenced DESC`
+         ORDER BY importance DESC, relevance_score DESC, last_referenced DESC`
       )
       .all(projectId) as any[]
 
@@ -33,26 +36,67 @@ export class MemoryManager {
   }
 
   create(projectId: string, opts: CreateMemoryOpts): Memory {
-    const id = uuidv4()
-    const layer = opts.layer ?? inferLayer(opts.content)
-    const room = opts.room ?? inferRoom(opts.content, opts.category)
+    // Auto-populate palace hierarchy if not provided
+    let wing = opts.wing
+    let room = opts.room
+    let hall = opts.hall
 
+    if (!wing) {
+      const project = getDb()
+        .prepare('SELECT name FROM projects WHERE id = ?')
+        .get(projectId) as any
+      wing = project ? getWingName(project.name) : undefined
+    }
+
+    if (!room) {
+      room = detectRoomForContent(opts.content) || undefined
+      if (room === 'general') room = undefined
+    }
+
+    if (!hall) {
+      hall = classifyHall(opts.content) || undefined
+    }
+
+    // Duplicate detection: check for similar content in same wing+room
+    if (wing) {
+      const dup = this.checkDuplicate(projectId, opts.content, wing, room)
+      if (dup.isDuplicate && dup.matchId) {
+        // Boost existing memory instead of creating duplicate
+        getDb()
+          .prepare(
+            `UPDATE memories SET
+              importance = MIN(importance + 0.2, 3.0),
+              relevance_score = MIN(relevance_score + 0.1, 2.0),
+              last_referenced = datetime('now')
+            WHERE id = ?`
+          )
+          .run(dup.matchId)
+        return rowToMemory(
+          getDb().prepare('SELECT * FROM memories WHERE id = ?').get(dup.matchId) as any
+        )
+      }
+    }
+
+    const id = uuidv4()
     getDb()
       .prepare(
-        `INSERT INTO memories (id, project_id, type, category, room, layer, content, verbatim, source, task_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO memories (id, project_id, type, category, content, source, task_id,
+          wing, room, hall, importance, added_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
         projectId,
         opts.type,
         opts.category ?? null,
-        room ?? null,
-        layer,
         opts.content,
-        opts.verbatim ?? null,
         opts.source ?? 'user_input',
-        opts.taskId ?? null
+        opts.taskId ?? null,
+        wing ?? null,
+        room ?? null,
+        hall ?? null,
+        opts.importance ?? 1.0,
+        opts.addedBy ?? 'user'
       )
 
     return rowToMemory(
@@ -61,24 +105,11 @@ export class MemoryManager {
   }
 
   update(id: string, content: string): void {
+    // Re-classify hall on content update
+    const hall = classifyHall(content) || undefined
     getDb()
-      .prepare(`UPDATE memories SET content = ? WHERE id = ?`)
-      .run(content, id)
-  }
-
-  updateFull(id: string, opts: Partial<CreateMemoryOpts>): void {
-    const sets: string[] = []
-    const vals: any[] = []
-    if (opts.content !== undefined) { sets.push('content = ?'); vals.push(opts.content) }
-    if (opts.room !== undefined) { sets.push('room = ?'); vals.push(opts.room) }
-    if (opts.layer !== undefined) { sets.push('layer = ?'); vals.push(opts.layer) }
-    if (opts.category !== undefined) { sets.push('category = ?'); vals.push(opts.category) }
-    if (opts.verbatim !== undefined) { sets.push('verbatim = ?'); vals.push(opts.verbatim) }
-    if (sets.length === 0) return
-    vals.push(id)
-    getDb()
-      .prepare(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`)
-      .run(...vals)
+      .prepare(`UPDATE memories SET content = ?, hall = COALESCE(?, hall) WHERE id = ?`)
+      .run(content, hall ?? null, id)
   }
 
   delete(id: string): void {
@@ -88,10 +119,6 @@ export class MemoryManager {
   }
 
   search(projectId: string, query: string): Memory[] {
-    // Sanitize query for FTS5: remove special chars that break the parser
-    const safeQuery = query.replace(/['"*()]/g, ' ').trim()
-    if (!safeQuery) return this.list(projectId)
-
     const rows = getDb()
       .prepare(
         `SELECT m.* FROM memories m
@@ -101,325 +128,273 @@ export class MemoryManager {
            AND m.deleted_at IS NULL
          ORDER BY rank`
       )
-      .all(safeQuery, projectId) as any[]
+      .all(query, projectId) as any[]
 
-    // Update last_referenced + reference_count for returned memories
     if (rows.length > 0) {
-      const ids = rows.map((r) => `'${r.id}'`).join(',')
-      getDb()
-        .prepare(
-          `UPDATE memories
-           SET last_referenced = datetime('now'),
-               reference_count = reference_count + 1
-           WHERE id IN (${ids})`
-        )
-        .run()
-    }
-
-    return rows.map(rowToMemory)
-  }
-
-  // ─── Rooms ────────────────────────────────────────────────────────────────
-
-  getRooms(projectId: string): { room: string; count: number }[] {
-    const rows = getDb()
-      .prepare(
-        `SELECT room, COUNT(*) as count FROM memories
-         WHERE project_id = ? AND deleted_at IS NULL AND room IS NOT NULL
-         GROUP BY room ORDER BY count DESC`
+      const updateStmt = getDb().prepare(
+        `UPDATE memories SET last_referenced = datetime('now') WHERE id = ?`
       )
-      .all(projectId) as any[]
-    return rows.map((r) => ({ room: r.room as string, count: r.count as number }))
-  }
-
-  getByRoom(projectId: string, room: string): Memory[] {
-    const rows = getDb()
-      .prepare(
-        `SELECT * FROM memories
-         WHERE project_id = ? AND room = ? AND deleted_at IS NULL
-         ORDER BY layer ASC, relevance_score DESC`
-      )
-      .all(projectId, room) as any[]
-    return rows.map(rowToMemory)
-  }
-
-  // ─── Links (Tunnels) ──────────────────────────────────────────────────────
-
-  getLinks(memoryId: string): (MemoryLink & { linkedMemory: Memory })[] {
-    const rows = getDb()
-      .prepare(
-        `SELECT ml.*, m.* FROM memory_links ml
-         JOIN memories m ON (
-           CASE WHEN ml.source_id = ? THEN ml.target_id ELSE ml.source_id END = m.id
-         )
-         WHERE (ml.source_id = ? OR ml.target_id = ?)
-           AND m.deleted_at IS NULL`
-      )
-      .all(memoryId, memoryId, memoryId) as any[]
-
-    return rows.map((row) => ({
-      id: row.id,
-      sourceId: row.source_id,
-      targetId: row.target_id,
-      relationship: row.relationship,
-      createdAt: row.created_at,
-      linkedMemory: rowToMemory(row)
-    }))
-  }
-
-  linkMemories(sourceId: string, targetId: string, relationship: MemoryLinkRelationship = 'related'): MemoryLink {
-    const id = uuidv4()
-    getDb()
-      .prepare(
-        `INSERT OR IGNORE INTO memory_links (id, source_id, target_id, relationship)
-         VALUES (?, ?, ?, ?)`
-      )
-      .run(id, sourceId, targetId, relationship)
-    return {
-      id,
-      sourceId,
-      targetId,
-      relationship,
-      createdAt: new Date().toISOString()
-    }
-  }
-
-  deleteLink(linkId: string): void {
-    getDb().prepare('DELETE FROM memory_links WHERE id = ?').run(linkId)
-  }
-
-  // ─── 4-Layer Context Generation ───────────────────────────────────────────
-  //
-  // L0 Identity  (~50 tokens): Project identity — always injected
-  // L1 Critical (~120 tokens): Hard rules, never-do constraints — always injected
-  // L2 Context    (on-demand): Room-level context matched to task topic
-  // L3 Archive    (on-demand): Task-specific learnings via deep FTS search
-
-  async generateContextBlock(projectId: string, taskDescription: string): Promise<string> {
-    // Always-active layers: L0 + L1
-    const alwaysRows = getDb()
-      .prepare(
-        `SELECT * FROM memories
-         WHERE project_id = ? AND layer IN (0, 1) AND deleted_at IS NULL
-         ORDER BY layer ASC, relevance_score DESC`
-      )
-      .all(projectId) as any[]
-    const always = alwaysRows.map(rowToMemory)
-
-    if (always.length > 0) {
-      const ids = always.map((m) => `'${m.id}'`).join(',')
-      getDb()
-        .prepare(
-          `UPDATE memories
-           SET last_referenced = datetime('now'),
-               reference_count = reference_count + 1
-           WHERE id IN (${ids})`
-        )
-        .run()
-    }
-
-    // On-demand layers: L2 + L3 via FTS on task description
-    let contextual: Memory[] = []
-    let deep: Memory[] = []
-
-    if (taskDescription.trim()) {
-      const safeQuery = taskDescription.replace(/['"*()]/g, ' ').trim()
-      if (safeQuery) {
-        try {
-          const l2Rows = getDb()
-            .prepare(
-              `SELECT m.* FROM memories m
-               JOIN memories_fts f ON f.rowid = m.rowid
-               WHERE f.memories_fts MATCH ?
-                 AND m.project_id = ?
-                 AND m.layer = 2
-                 AND m.deleted_at IS NULL
-               ORDER BY rank
-               LIMIT 10`
-            )
-            .all(safeQuery, projectId) as any[]
-          contextual = l2Rows.map(rowToMemory)
-
-          const l3Rows = getDb()
-            .prepare(
-              `SELECT m.* FROM memories m
-               JOIN memories_fts f ON f.rowid = m.rowid
-               WHERE f.memories_fts MATCH ?
-                 AND m.project_id = ?
-                 AND m.layer = 3
-                 AND m.deleted_at IS NULL
-               ORDER BY rank
-               LIMIT 5`
-            )
-            .all(safeQuery, projectId) as any[]
-          deep = l3Rows.map(rowToMemory)
-        } catch {
-          // FTS parse failure — fall back gracefully
-        }
+      for (const row of rows) {
+        updateStmt.run(row.id)
       }
     }
 
-    // Fallback: if no on-demand results, pull top L2 by relevance
-    if (contextual.length === 0 && deep.length === 0) {
-      const fallbackRows = getDb()
-        .prepare(
-          `SELECT * FROM memories
-           WHERE project_id = ? AND layer IN (2, 3) AND deleted_at IS NULL
-           ORDER BY relevance_score DESC, last_referenced DESC
-           LIMIT 10`
-        )
-        .all(projectId) as any[]
-      contextual = fallbackRows.map(rowToMemory)
-    }
-
-    // Deduplicate against always-active set
-    const alwaysIds = new Set(always.map((m) => m.id))
-    contextual = contextual.filter((m) => !alwaysIds.has(m.id))
-    deep = deep.filter((m) => !alwaysIds.has(m.id) && !contextual.some((c) => c.id === m.id))
-
-    const allMemories = [...always, ...contextual, ...deep]
-    if (allMemories.length === 0) return ''
-
-    return buildContextBlock(always, contextual, deep)
+    return rows.map(rowToMemory)
   }
 
-  // ─── Auto-capture from Claude session ────────────────────────────────────
+  /**
+   * Search with palace filtering: wing + optional room/hall narrows results
+   * (mempalace's +34% retrieval boost from metadata filtering)
+   */
+  searchPalace(
+    projectId: string,
+    query: string,
+    opts?: { wing?: string; room?: string; hall?: string }
+  ): Memory[] {
+    let sql = `SELECT m.* FROM memories m
+      JOIN memories_fts f ON f.rowid = m.rowid
+      WHERE f.memories_fts MATCH ?
+        AND m.project_id = ?
+        AND m.deleted_at IS NULL`
+    const params: any[] = [query, projectId]
 
+    if (opts?.wing) {
+      sql += ' AND m.wing = ?'
+      params.push(opts.wing)
+    }
+    if (opts?.room) {
+      sql += ' AND m.room = ?'
+      params.push(opts.room)
+    }
+    if (opts?.hall) {
+      sql += ' AND m.hall = ?'
+      params.push(opts.hall)
+    }
+
+    sql += ' ORDER BY rank'
+
+    const rows = getDb().prepare(sql).all(...params) as any[]
+    return rows.map(rowToMemory)
+  }
+
+  // ─── 4-Layer Memory Stack (mempalace architecture) ─────────────────────
+
+  /**
+   * Generate palace context using the 4-layer memory stack.
+   * L0: Identity (~50 tokens) — always loaded
+   * L1: Essential Story (~120 tokens) — top memories by importance
+   * L2: On-Demand (~200-500 tokens) — task-filtered by room
+   * L3: Deep Search — FTS5 fallback
+   */
+  async generatePalaceContext(projectId: string, taskDescription: string): Promise<string> {
+    const lines: string[] = []
+
+    // L0: Identity (always loaded)
+    const identity = getDb()
+      .prepare('SELECT content FROM palace_identity WHERE project_id = ?')
+      .get(projectId) as any
+    if (identity?.content) {
+      lines.push('# Identity', '', identity.content, '')
+    }
+
+    // L1: Essential Story — top 15 highest-importance memories grouped by room
+    const topMemories = getDb()
+      .prepare(
+        `SELECT * FROM memories
+         WHERE project_id = ? AND deleted_at IS NULL
+         ORDER BY importance DESC, relevance_score DESC
+         LIMIT 15`
+      )
+      .all(projectId) as any[]
+
+    if (topMemories.length > 0) {
+      lines.push('# Project Context', '')
+      const byRoom: Record<string, any[]> = {}
+      for (const m of topMemories) {
+        const roomKey = m.room ?? 'general'
+        if (!byRoom[roomKey]) byRoom[roomKey] = []
+        byRoom[roomKey].push(m)
+      }
+      for (const [room, mems] of Object.entries(byRoom)) {
+        lines.push(`## ${room}`)
+        for (const m of mems) {
+          const hallTag = m.hall ? ` [${m.hall.replace('hall_', '')}]` : ''
+          lines.push(`- ${m.content}${hallTag}`)
+        }
+        lines.push('')
+      }
+    }
+
+    // L2: On-Demand Retrieval — search by task-relevant room
+    if (taskDescription.trim()) {
+      const taskRoom = detectRoomForContent(taskDescription)
+      let relevantMemories: any[] = []
+
+      // First try room-filtered search
+      if (taskRoom && taskRoom !== 'general') {
+        relevantMemories = getDb()
+          .prepare(
+            `SELECT * FROM memories
+             WHERE project_id = ? AND deleted_at IS NULL AND room = ?
+             ORDER BY importance DESC, relevance_score DESC
+             LIMIT 10`
+          )
+          .all(projectId, taskRoom) as any[]
+      }
+
+      // If room search got < 3 results, try FTS5
+      if (relevantMemories.length < 3) {
+        try {
+          const ftsResults = this.search(projectId, taskDescription)
+          // Merge without duplicates
+          const existingIds = new Set([
+            ...topMemories.map((m: any) => m.id),
+            ...relevantMemories.map((m: any) => m.id)
+          ])
+          for (const m of ftsResults) {
+            if (!existingIds.has(m.id)) {
+              relevantMemories.push(m)
+            }
+          }
+        } catch {
+          // FTS query failure is OK
+        }
+      }
+
+      // Filter out what's already in L1
+      const l1Ids = new Set(topMemories.map((m: any) => m.id))
+      const l2Memories = relevantMemories.filter((m: any) => !l1Ids.has(m.id)).slice(0, 10)
+
+      if (l2Memories.length > 0) {
+        lines.push('# Task-Relevant Context', '')
+        for (const m of l2Memories) {
+          const content = typeof m.content === 'string' ? m.content : m.content
+          const roomTag = m.room ? ` [${m.room}]` : ''
+          lines.push(`- ${content}${roomTag}`)
+        }
+        lines.push('')
+      }
+    }
+
+    // Include global patterns from other projects (cross-wing tunnels)
+    const globalPatterns = this.getGlobalPatterns()
+    const existingIds = new Set(topMemories.map((m: any) => m.id))
+    const uniqueGlobals = globalPatterns.filter((m) => !existingIds.has(m.id)).slice(0, 5)
+    if (uniqueGlobals.length > 0) {
+      lines.push('# Global Patterns', '')
+      for (const m of uniqueGlobals) {
+        lines.push(`- ${m.content}`)
+      }
+      lines.push('')
+    }
+
+    return lines.join('\n')
+  }
+
+  // Keep the old method as a thin wrapper for backwards compat
+  async generateContextBlock(projectId: string, taskDescription: string): Promise<string> {
+    return this.generatePalaceContext(projectId, taskDescription)
+  }
+
+  // ─── Palace Identity (L0) ─────────────────────────────────────────────
+
+  getIdentity(projectId: string): string {
+    const row = getDb()
+      .prepare('SELECT content FROM palace_identity WHERE project_id = ?')
+      .get(projectId) as any
+    return row?.content ?? ''
+  }
+
+  setIdentity(projectId: string, content: string): void {
+    getDb()
+      .prepare(
+        `INSERT INTO palace_identity (project_id, content, updated_at)
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT(project_id) DO UPDATE SET content = ?, updated_at = datetime('now')`
+      )
+      .run(projectId, content, content)
+  }
+
+  // ─── Enhanced Conversation Mining (replaces simple extractPatterns) ────
+
+  /**
+   * Mine Claude messages from a completed task.
+   * Classifies each learning into a hall (facts/events/discoveries/preferences/advice).
+   */
   captureFromTask(taskId: string): Memory[] {
     const messages = getDb()
-      .prepare(`SELECT content FROM messages WHERE task_id = ? AND role = 'claude' ORDER BY timestamp`)
+      .prepare(
+        `SELECT content FROM messages WHERE task_id = ? AND role = 'claude' ORDER BY timestamp`
+      )
       .all(taskId) as { content: string }[]
 
     const task = getDb()
       .prepare('SELECT project_id, title FROM tasks WHERE id = ?')
-      .get(taskId) as { project_id: string; title: string } | undefined
+      .get(taskId) as { project_id: string; title?: string } | undefined
 
     if (!task || messages.length === 0) return []
 
-    const recentMessages = messages.slice(-5) // Expanded to 5 for better coverage
+    const project = getDb()
+      .prepare('SELECT name FROM projects WHERE id = ?')
+      .get(task.project_id) as any
+    const wing = project ? getWingName(project.name) : undefined
+    const room = task.title ? detectRoomForContent(task.title) : undefined
+
     const extracted: Memory[] = []
-    const seenContent = new Set<string>()
-
-    for (const msg of recentMessages) {
-      const patterns = extractPatterns(msg.content)
-      for (const { content, layer, room, verbatim } of patterns) {
-        const normalized = content.toLowerCase().trim()
-        if (seenContent.has(normalized)) continue
-        seenContent.add(normalized)
-
+    // Process ALL messages, not just last 3
+    for (const msg of messages) {
+      const learnings = extractHallClassifiedPatterns(msg.content)
+      for (const learning of learnings) {
         try {
           const memory = this.create(task.project_id, {
-            type: layer <= 1 ? 'pattern' : 'task_learning',
-            content,
-            verbatim,
-            room,
-            layer,
+            type: learning.type,
+            content: learning.content,
             source: 'inferred',
-            taskId
+            taskId,
+            wing,
+            room: room !== 'general' ? room : undefined,
+            hall: learning.hall,
+            importance: learning.importance,
+            addedBy: 'session_mining'
           })
           extracted.push(memory)
         } catch {
-          // ignore
+          // ignore duplicate or invalid entries
         }
       }
-    }
-
-    // Auto-link extracted memories to existing similar ones
-    if (extracted.length > 0) {
-      this.autoLinkMemories(task.project_id, extracted)
     }
 
     return extracted
   }
 
-  private autoLinkMemories(projectId: string, newMemories: Memory[]): void {
-    for (const mem of newMemories) {
-      const safeQuery = mem.content.split(' ').slice(0, 5).join(' ').replace(/['"*()]/g, ' ').trim()
-      if (!safeQuery) continue
-      try {
-        const similar = getDb()
-          .prepare(
-            `SELECT m.id FROM memories m
-             JOIN memories_fts f ON f.rowid = m.rowid
-             WHERE f.memories_fts MATCH ?
-               AND m.project_id = ?
-               AND m.id != ?
-               AND m.deleted_at IS NULL
-             ORDER BY rank
-             LIMIT 3`
-          )
-          .all(safeQuery, projectId, mem.id) as { id: string }[]
-
-        for (const s of similar) {
-          try {
-            this.linkMemories(mem.id, s.id, 'related')
-          } catch {
-            // duplicate link — ignore
-          }
-        }
-      } catch {
-        // FTS error — ignore
-      }
-    }
-  }
-
-  // ─── Export to file ───────────────────────────────────────────────────────
-
-  export(projectId: string): void {
+  writeMemoriesFile(projectId: string): void {
     const project = getDb()
-      .prepare('SELECT path, name FROM projects WHERE id = ?')
-      .get(projectId) as { path: string; name: string } | undefined
+      .prepare('SELECT path FROM projects WHERE id = ?')
+      .get(projectId) as { path: string } | undefined
 
     if (!project) return
 
     const memories = this.list(projectId)
     if (memories.length === 0) return
 
-    const lines: string[] = [
-      `# Memory Palace — ${project.name}`,
-      '',
-      '*Auto-generated by ClaudeKanBan. Injected into Claude sessions automatically.*',
-      ''
-    ]
-
-    // Group by layer
-    const byLayer: Record<number, Memory[]> = { 0: [], 1: [], 2: [], 3: [] }
+    // Group by room then hall for palace-style output
+    const byRoom: Record<string, Memory[]> = {}
     for (const m of memories) {
-      byLayer[m.layer].push(m)
+      const key = (m as any).room ?? 'general'
+      if (!byRoom[key]) byRoom[key] = []
+      byRoom[key].push(m)
     }
 
-    const layerNames: Record<number, string> = {
-      0: 'L0 — Identity (Always Active)',
-      1: 'L1 — Critical (Always Active)',
-      2: 'L2 — Context (On-Demand)',
-      3: 'L3 — Archive (Deep Search)'
-    }
+    const lines: string[] = ['# Project Memories (Palace)', '', '*Auto-generated by ClaudeKanBan*', '']
 
-    for (const layer of [0, 1, 2, 3] as MemoryLayer[]) {
-      const items = byLayer[layer]
-      if (items.length === 0) continue
-      lines.push(`## ${layerNames[layer]}`)
+    for (const [room, mems] of Object.entries(byRoom)) {
+      lines.push(`## ${room}`)
+      for (const m of mems) {
+        const hallTag = (m as any).hall ? ` [${(m as any).hall.replace('hall_', '')}]` : ''
+        const typeTag = ` (${m.type})`
+        lines.push(`- ${m.content}${hallTag}${typeTag}`)
+      }
       lines.push('')
-
-      // Group by room within each layer
-      const byRoom: Record<string, Memory[]> = {}
-      for (const m of items) {
-        const r = m.room ?? 'general'
-        if (!byRoom[r]) byRoom[r] = []
-        byRoom[r].push(m)
-      }
-
-      for (const [room, roomItems] of Object.entries(byRoom)) {
-        if (Object.keys(byRoom).length > 1) {
-          lines.push(`### ${room}`)
-          lines.push('')
-        }
-        for (const m of roomItems) {
-          const categoryTag = m.category ? ` [${m.category}]` : ''
-          lines.push(`- ${m.content}${categoryTag}`)
-        }
-        lines.push('')
-      }
     }
 
     const claudeDir = join(project.path, '.claude')
@@ -427,9 +402,215 @@ export class MemoryManager {
     writeFileSync(join(claudeDir, 'memories.md'), lines.join('\n'), 'utf-8')
   }
 
-  // Legacy alias
-  writeMemoriesFile(projectId: string): void {
-    this.export(projectId)
+  // ─── Duplicate Detection ──────────────────────────────────────────────
+
+  checkDuplicate(
+    projectId: string,
+    content: string,
+    wing?: string,
+    room?: string
+  ): { isDuplicate: boolean; matchId?: string; similarity?: number } {
+    let sql = `SELECT id, content FROM memories
+      WHERE project_id = ? AND deleted_at IS NULL`
+    const params: any[] = [projectId]
+
+    if (wing) {
+      sql += ' AND wing = ?'
+      params.push(wing)
+    }
+    if (room) {
+      sql += ' AND room = ?'
+      params.push(room)
+    }
+
+    sql += ' ORDER BY created_at DESC LIMIT 50'
+
+    const rows = getDb().prepare(sql).all(...params) as any[]
+    for (const row of rows) {
+      const sim = computeSimilarity(content, row.content)
+      if (sim > 0.7) {
+        return { isDuplicate: true, matchId: row.id, similarity: sim }
+      }
+    }
+    return { isDuplicate: false }
+  }
+
+  // ─── Consolidation ────────────────────────────────────────────────────
+
+  consolidate(projectId: string): { merged: number; removed: number } {
+    const memories = this.list(projectId)
+    let merged = 0
+    let removed = 0
+
+    const grouped = groupByType(memories)
+
+    for (const [, items] of Object.entries(grouped)) {
+      const toDelete: string[] = []
+
+      for (let i = 0; i < items.length; i++) {
+        if (toDelete.includes(items[i].id)) continue
+
+        for (let j = i + 1; j < items.length; j++) {
+          if (toDelete.includes(items[j].id)) continue
+
+          const similarity = computeSimilarity(items[i].content, items[j].content)
+          if (similarity > 0.7) {
+            const keep = items[i].relevanceScore >= items[j].relevanceScore ? items[i] : items[j]
+            const remove = keep === items[i] ? items[j] : items[i]
+
+            getDb()
+              .prepare(
+                `UPDATE memories SET
+                  importance = MIN(importance + 0.2, 3.0),
+                  relevance_score = MIN(relevance_score + 0.2, 2.0)
+                WHERE id = ?`
+              )
+              .run(keep.id)
+
+            toDelete.push(remove.id)
+            merged++
+          }
+        }
+      }
+
+      for (const id of toDelete) {
+        this.delete(id)
+        removed++
+      }
+    }
+
+    return { merged, removed }
+  }
+
+  // ─── Relevance Decay ──────────────────────────────────────────────────
+
+  decayRelevance(projectId: string): { decayed: number; pruned: number } {
+    const decayResult = getDb()
+      .prepare(
+        `UPDATE memories
+         SET relevance_score = relevance_score * 0.9
+         WHERE project_id = ?
+           AND deleted_at IS NULL
+           AND last_referenced < datetime('now', '-30 days')`
+      )
+      .run(projectId)
+
+    const pruneResult = getDb()
+      .prepare(
+        `UPDATE memories
+         SET deleted_at = datetime('now')
+         WHERE project_id = ?
+           AND deleted_at IS NULL
+           AND relevance_score < 0.1`
+      )
+      .run(projectId)
+
+    return {
+      decayed: decayResult.changes,
+      pruned: pruneResult.changes
+    }
+  }
+
+  // ─── Cross-Project Patterns (Tunnels) ─────────────────────────────────
+
+  getGlobalPatterns(): Memory[] {
+    const rows = getDb()
+      .prepare(
+        `SELECT * FROM memories
+         WHERE type IN ('pattern', 'convention')
+           AND deleted_at IS NULL
+           AND relevance_score >= 0.8
+         ORDER BY relevance_score DESC
+         LIMIT 20`
+      )
+      .all() as any[]
+
+    return rows.map(rowToMemory)
+  }
+
+  // ─── Palace Statistics ────────────────────────────────────────────────
+
+  palaceStats(projectId: string): {
+    totalMemories: number
+    byHall: Record<string, number>
+    byRoom: Record<string, number>
+    wing: string | null
+  } {
+    const total = (
+      getDb()
+        .prepare('SELECT COUNT(*) as c FROM memories WHERE project_id = ? AND deleted_at IS NULL')
+        .get(projectId) as any
+    ).c
+
+    const hallRows = getDb()
+      .prepare(
+        `SELECT hall, COUNT(*) as c FROM memories
+         WHERE project_id = ? AND deleted_at IS NULL AND hall IS NOT NULL
+         GROUP BY hall`
+      )
+      .all(projectId) as any[]
+
+    const roomRows = getDb()
+      .prepare(
+        `SELECT room, COUNT(*) as c FROM memories
+         WHERE project_id = ? AND deleted_at IS NULL AND room IS NOT NULL
+         GROUP BY room ORDER BY c DESC`
+      )
+      .all(projectId) as any[]
+
+    const wingRow = getDb()
+      .prepare(
+        `SELECT wing FROM memories
+         WHERE project_id = ? AND wing IS NOT NULL LIMIT 1`
+      )
+      .get(projectId) as any
+
+    const byHall: Record<string, number> = {}
+    for (const r of hallRows) byHall[r.hall] = r.c
+
+    const byRoom: Record<string, number> = {}
+    for (const r of roomRows) byRoom[r.room] = r.c
+
+    return { totalMemories: total, byHall, byRoom, wing: wingRow?.wing ?? null }
+  }
+
+  // ─── Import/Export ────────────────────────────────────────────────────
+
+  exportMemories(projectId: string): any[] {
+    const memories = this.list(projectId)
+    return memories.map((m) => ({
+      type: m.type,
+      category: m.category,
+      content: m.content,
+      source: m.source,
+      relevanceScore: m.relevanceScore,
+      wing: (m as any).wing,
+      room: (m as any).room,
+      hall: (m as any).hall,
+      importance: (m as any).importance
+    }))
+  }
+
+  importMemories(projectId: string, data: any[]): number {
+    let imported = 0
+    for (const item of data) {
+      try {
+        this.create(projectId, {
+          type: item.type ?? 'project_context',
+          category: item.category,
+          content: item.content,
+          source: item.source ?? 'user_input',
+          wing: item.wing,
+          room: item.room,
+          hall: item.hall,
+          importance: item.importance
+        })
+        imported++
+      } catch {
+        // skip invalid entries
+      }
+    }
+    return imported
   }
 }
 
@@ -441,159 +622,123 @@ function rowToMemory(row: any): Memory {
     projectId: row.project_id,
     type: row.type,
     category: row.category,
-    room: row.room ?? undefined,
-    layer: (row.layer ?? 2) as MemoryLayer,
     content: row.content,
-    verbatim: row.verbatim ?? undefined,
     source: row.source,
     taskId: row.task_id,
     relevanceScore: row.relevance_score,
-    referenceCount: row.reference_count ?? 0,
     createdAt: row.created_at,
-    lastReferenced: row.last_referenced
-  }
+    lastReferenced: row.last_referenced,
+    // Palace fields
+    wing: row.wing,
+    room: row.room,
+    hall: row.hall,
+    importance: row.importance,
+    addedBy: row.added_by
+  } as any
 }
 
-function buildContextBlock(
-  always: Memory[],
-  contextual: Memory[],
-  deep: Memory[]
-): string {
-  const lines: string[] = [
-    '# Project Memory Palace',
-    '',
-    '> Relevant context for this task. Treat these as authoritative facts about the project.',
-    ''
-  ]
-
-  const l0 = always.filter((m) => m.layer === 0)
-  const l1 = always.filter((m) => m.layer === 1)
-
-  if (l0.length > 0) {
-    lines.push('## Identity')
-    for (const m of l0) lines.push(`- ${m.content}`)
-    lines.push('')
+function groupByType(memories: Memory[]): Record<string, Memory[]> {
+  const groups: Record<string, Memory[]> = {}
+  for (const m of memories) {
+    if (!groups[m.type]) groups[m.type] = []
+    groups[m.type].push(m)
   }
-
-  if (l1.length > 0) {
-    lines.push('## Critical Facts')
-    for (const m of l1) lines.push(`- ${m.content}`)
-    lines.push('')
-  }
-
-  if (contextual.length > 0) {
-    lines.push('## Relevant Context')
-    // Group by room for readability
-    const byRoom: Record<string, Memory[]> = {}
-    for (const m of contextual) {
-      const r = m.room ?? 'general'
-      if (!byRoom[r]) byRoom[r] = []
-      byRoom[r].push(m)
-    }
-    for (const [, items] of Object.entries(byRoom)) {
-      for (const m of items) {
-        const tag = m.room ? ` [${m.room}]` : ''
-        lines.push(`- ${m.content}${tag}`)
-      }
-    }
-    lines.push('')
-  }
-
-  if (deep.length > 0) {
-    lines.push('## Related Learnings')
-    for (const m of deep) lines.push(`- ${m.content}`)
-    lines.push('')
-  }
-
-  return lines.join('\n')
+  return groups
 }
 
-// Auto-detect room from content keywords
-function inferRoom(content: string, category?: MemoryCategory): string | undefined {
-  const lower = content.toLowerCase()
+function computeSimilarity(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter((w) => w.length > 3))
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter((w) => w.length > 3))
 
-  if (/\b(auth|login|logout|password|token|jwt|session|oauth|permission|role)\b/.test(lower)) return 'auth'
-  if (/\b(api|endpoint|route|request|response|rest|graphql|http|fetch|axios)\b/.test(lower)) return 'api'
-  if (/\b(database|db|query|migration|schema|sql|orm|prisma|sqlite|postgres|mysql|mongo)\b/.test(lower)) return 'database'
-  if (/\b(test|spec|jest|vitest|playwright|coverage|mock|fixture)\b/.test(lower)) return 'testing'
-  if (/\b(deploy|ci|cd|docker|container|build|pipeline|github.action|workflow)\b/.test(lower)) return 'devops'
-  if (/\b(component|react|vue|angular|ui|frontend|css|style|tailwind|html)\b/.test(lower)) return 'frontend'
-  if (/\b(state|store|redux|zustand|context|hook|signal)\b/.test(lower)) return 'state'
-  if (/\b(error|exception|crash|bug|fix|issue|debug|trace)\b/.test(lower)) return 'debugging'
-  if (/\b(performance|speed|cache|optimize|memory|latency|throughput)\b/.test(lower)) return 'performance'
-  if (/\b(file|fs|path|directory|upload|download|stream)\b/.test(lower)) return 'filesystem'
+  if (wordsA.size === 0 || wordsB.size === 0) return 0
 
-  if (category) {
-    const map: Partial<Record<MemoryCategory, string>> = {
-      architecture: 'architecture',
-      convention: 'conventions',
-      debugging: 'debugging',
-      performance: 'performance',
-      brand_voice: 'brand',
-      workflow: 'workflow',
-      dependency: 'dependencies'
-    }
-    return map[category]
+  let intersection = 0
+  for (const w of wordsA) {
+    if (wordsB.has(w)) intersection++
   }
 
-  return undefined
+  const union = wordsA.size + wordsB.size - intersection
+  return union > 0 ? intersection / union : 0
 }
 
-// Auto-assign layer based on signal words in content
-function inferLayer(content: string): MemoryLayer {
-  const lower = content.toLowerCase()
-
-  // L0: foundational identity statements
-  if (/\b(this (project|app|codebase) (is|uses|runs)|built with|written in|tech stack)\b/.test(lower)) return 0
-
-  // L1: critical rules, always/never constraints
-  const l1Signals = ['always ', 'never ', 'must ', 'do not ', "don't ", 'critical', 'required', 'forbidden', 'mandatory']
-  if (l1Signals.some((s) => lower.includes(s))) return 1
-
-  // L2: conventions, patterns, design decisions
-  const l2Signals = ['convention', 'pattern', 'best practice', 'prefer', 'approach', 'design', 'should ', 'use ', 'when ']
-  if (l2Signals.some((s) => lower.includes(s))) return 2
-
-  // L3: task-specific learnings
-  return 3
-}
-
-interface ExtractedPattern {
+interface ClassifiedLearning {
   content: string
-  verbatim: string
-  layer: MemoryLayer
-  room: string | undefined
+  type: MemoryType
+  hall: string
+  importance: number
 }
 
-function extractPatterns(content: string): ExtractedPattern[] {
-  const patterns: ExtractedPattern[] = []
-  const sentences = content.split(/(?<=[.!?])\s+/)
+/**
+ * Extract learnings from Claude message content with hall classification.
+ * Replaces the old simple extractPatterns approach.
+ */
+function extractHallClassifiedPatterns(content: string): ClassifiedLearning[] {
+  const learnings: ClassifiedLearning[] = []
+  const sentences = content.split(/[.!?]\s+/)
+
+  const hallSignals: Record<string, { patterns: RegExp[]; type: MemoryType; importance: number }> = {
+    hall_facts: {
+      patterns: [
+        /\b(?:decided|chose|went with|locked in|confirmed|switched to|migrated|using|adopted|implemented)\b/i
+      ],
+      type: 'pattern',
+      importance: 1.5
+    },
+    hall_events: {
+      patterns: [
+        /\b(?:completed|finished|deployed|shipped|released|fixed|resolved|merged|started)\b/i
+      ],
+      type: 'task_learning',
+      importance: 1.2
+    },
+    hall_discoveries: {
+      patterns: [
+        /\b(?:discovered|found that|turns out|realized|learned|root cause|issue was|problem was)\b/i
+      ],
+      type: 'task_learning',
+      importance: 1.8
+    },
+    hall_preferences: {
+      patterns: [
+        /\b(?:prefer|always use|convention|pattern|standard|idiom|typically)\b/i
+      ],
+      type: 'pattern',
+      importance: 1.3
+    },
+    hall_advice: {
+      patterns: [
+        /\b(?:recommend|should|best practice|make sure|never|always|avoid|important|remember)\b/i
+      ],
+      type: 'feedback',
+      importance: 1.4
+    }
+  }
 
   for (const sentence of sentences) {
     const s = sentence.trim()
-    if (s.length < 20 || s.length > 400) continue
+    if (s.length < 20 || s.length > 300) continue
 
-    const signalWords = [
-      'important', 'note:', 'remember', 'always', 'never', 'make sure',
-      'convention', 'pattern', 'best practice', 'fixed', 'resolved',
-      'issue was', 'problem was', 'solution was', 'works by', 'should ',
-      'do not', "don't", 'must ', 'critical', 'use '
-    ]
-
-    const lower = s.toLowerCase()
-    if (!signalWords.some((w) => lower.includes(w))) continue
-
-    // Remove markdown formatting for the stored content
-    const cleaned = s.replace(/[#*`_~]/g, '').trim()
-    if (!cleaned) continue
-
-    patterns.push({
-      content: cleaned,
-      verbatim: s,
-      layer: inferLayer(cleaned),
-      room: inferRoom(cleaned)
-    })
+    for (const [hall, config] of Object.entries(hallSignals)) {
+      for (const pattern of config.patterns) {
+        if (pattern.test(s)) {
+          learnings.push({
+            content: s,
+            type: config.type,
+            hall,
+            importance: config.importance
+          })
+          break // Only classify into first matching hall
+        }
+      }
+    }
   }
 
-  return patterns.slice(0, 5) // Cap at 5 per message
+  // Deduplicate and cap
+  const seen = new Set<string>()
+  return learnings.filter((l) => {
+    const key = l.content.toLowerCase().slice(0, 50)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, 10) // Max 10 learnings per message set
 }

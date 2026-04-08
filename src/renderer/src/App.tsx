@@ -2,27 +2,33 @@ import { useEffect } from 'react'
 import { useProjectStore } from './store/projectStore'
 import { useTaskStore } from './store/taskStore'
 import { useUiStore } from './store/uiStore'
+import { useUsageStore } from './store/usageStore'
 import ProjectTabs from './components/ProjectTabs'
 import Sidebar from './components/Sidebar'
+import UsageStatusBar from './components/UsageStatusBar'
 import Board from './pages/Board'
 import Skills from './pages/Skills'
 import Docs from './pages/Docs'
 import Memory from './pages/Memory'
 import GitView from './pages/GitView'
 import Outputs from './pages/Outputs'
+import Usage from './pages/Usage'
 import Settings from './pages/Settings'
 import CreateTaskModal from './components/CreateTaskModal'
 import OutputPreview from './components/OutputPreview'
+import ErrorBoundary from './components/ErrorBoundary'
 
 export default function App() {
   const { loadProjects, activeProjectId } = useProjectStore()
   const { loadTasks, handleTaskStatusEvent, handleSessionOutput, handleOutputCreated } =
     useTaskStore()
   const { currentPage, createTaskOpen, outputPreviewPath } = useUiStore()
+  const { handleUsageUpdate, loadWeeklySummary } = useUsageStore()
 
   // Bootstrap
   useEffect(() => {
     loadProjects()
+    loadWeeklySummary()
   }, [])
 
   // Load tasks when project changes
@@ -44,10 +50,14 @@ export default function App() {
     const offCreated = window.electronAPI.on('output-created', (payload) =>
       handleOutputCreated(payload)
     )
+    const offUsage = window.electronAPI.on('usage-update', (payload) =>
+      handleUsageUpdate(payload)
+    )
     return () => {
       offStatus()
       offOutput()
       offCreated()
+      offUsage()
     }
   }, [])
 
@@ -65,6 +75,8 @@ export default function App() {
         return <GitView />
       case 'outputs':
         return <Outputs />
+      case 'usage':
+        return <Usage />
       case 'settings':
         return <Settings />
       default:
@@ -86,7 +98,12 @@ export default function App() {
         <ProjectTabs />
 
         {/* Page content */}
-        <div className="flex-1 overflow-hidden">{renderPage()}</div>
+        <div className="flex-1 overflow-hidden">
+          <ErrorBoundary>{renderPage()}</ErrorBoundary>
+        </div>
+
+        {/* Usage status bar */}
+        <UsageStatusBar />
       </div>
 
       {/* Modals & overlays */}

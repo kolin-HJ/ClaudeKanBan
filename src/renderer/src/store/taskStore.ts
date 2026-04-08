@@ -12,7 +12,7 @@ interface TaskStore {
   loadTasks: (projectId: string) => Promise<void>
   createTask: (
     projectId: string,
-    opts: { title: string; description?: string; depth: string; permission: string }
+    opts: { title: string; description?: string; depth: string; permission: string; asanaGid?: string; asanaPermalink?: string }
   ) => Promise<Task>
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>
   deleteTask: (taskId: string) => Promise<void>

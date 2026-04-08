@@ -53,6 +53,10 @@ interface ElectronAPI {
     search(projectId: string, query: string): Promise<any[]>
     contextBlock(projectId: string, taskDescription: string): Promise<string>
     captureFromTask(taskId: string): Promise<any[]>
+    consolidate(projectId: string): Promise<any>
+    exportMemories(projectId: string): Promise<any[]>
+    importMemories(projectId: string, data: any[]): Promise<void>
+    globalPatterns(): Promise<any[]>
   }
   skills: {
     list(projectPath?: string): Promise<any[]>
@@ -60,6 +64,9 @@ interface ElectronAPI {
     update(filePath: string, content: string): Promise<void>
     create(name: string, content: string, targetDir: string): Promise<any>
     fetchUrl(url: string): Promise<string>
+    projectList(projectId: string): Promise<any[]>
+    toggle(projectId: string, skillPath: string, active: boolean): Promise<void>
+    setPriority(projectId: string, skillPath: string, priority: number): Promise<void>
   }
   docs: {
     list(projectId: string): Promise<{ name: string; path: string }[]>
@@ -72,12 +79,85 @@ interface ElectronAPI {
     toggle(id: string): Promise<void>
     delete(id: string): Promise<void>
   }
+  usage: {
+    session(sessionId: string): Promise<any>
+    weekly(projectId?: string): Promise<any>
+    project(projectId: string): Promise<any>
+    dailyBreakdown(days?: number, projectId?: string): Promise<any[]>
+    tools(projectId?: string, days?: number): Promise<any[]>
+    context(sessionId: string): Promise<any[]>
+    live(): Promise<any[]>
+  }
+  insights: {
+    list(projectId: string, limit?: number): Promise<any[]>
+    get(id: string): Promise<any>
+    promoteLearning(projectId: string, learning: string): Promise<void>
+  }
+  palace: {
+    identityGet(projectId: string): Promise<string>
+    identitySet(projectId: string, content: string): Promise<void>
+    rooms(projectId: string): Promise<Record<string, number>>
+    detectRooms(projectId: string): Promise<string[]>
+    stats(projectId: string): Promise<any>
+    graph(projectId?: string): Promise<any>
+    traverse(startRoom: string, maxHops?: number): Promise<any[]>
+    tunnels(wingA?: string, wingB?: string): Promise<any[]>
+    search(projectId: string, query: string, opts?: any): Promise<any[]>
+    duplicateCheck(projectId: string, content: string, wing?: string, room?: string): Promise<any>
+  }
+  kg: {
+    addEntity(name: string, entityType: string, properties?: any): Promise<string>
+    listEntities(entityType?: string): Promise<any[]>
+    addTriple(subject: string, predicate: string, object: string, opts?: any): Promise<string>
+    invalidate(subject: string, predicate: string, object: string, ended?: string): Promise<void>
+    queryEntity(name: string, opts?: any): Promise<any[]>
+    queryRelationship(predicate: string, asOf?: string): Promise<any[]>
+    timeline(entityName: string, limit?: number): Promise<any[]>
+    stats(): Promise<any>
+  }
+  diary: {
+    write(opts: any): Promise<string>
+    read(projectId: string, agentName?: string, lastN?: number): Promise<any[]>
+    readByTopic(projectId: string, topic: string, lastN?: number): Promise<any[]>
+  }
+  asana: {
+    verify(): Promise<{ ok: boolean; name?: string; email?: string; error?: string }>
+    setToken(token: string): Promise<void>
+    getToken(): Promise<string | null>
+    workspaces(): Promise<any[]>
+    projects(workspaceGid: string): Promise<any[]>
+    sections(projectGid: string): Promise<any[]>
+    tasks(projectGid: string): Promise<any[]>
+    taskDetail(taskGid: string): Promise<any>
+    completeTask(taskGid: string, comment?: string): Promise<void>
+    addComment(taskGid: string, text: string): Promise<void>
+  }
+  checkpoints: {
+    list(sessionId: string): Promise<any[]>
+    get(checkpointId: string): Promise<any>
+  }
+  security: {
+    score(sessionId: string): Promise<any>
+    projectScores(projectId: string, limit?: number): Promise<any[]>
+  }
+  settings: {
+    get(key: string): Promise<any>
+    set(key: string, value: any): Promise<void>
+  }
   system: {
     openDialog(options: any): Promise<any>
     openExternal(url: string): Promise<void>
+    claudeCheck(): Promise<{ available: boolean; version?: string; error?: string }>
+    activeSessions(): Promise<any[]>
   }
   on(
-    event: 'session-output' | 'task-status' | 'output-created' | 'git-changed',
+    event:
+      | 'session-output'
+      | 'task-status'
+      | 'output-created'
+      | 'git-changed'
+      | 'usage-update'
+      | 'session-health',
     callback: (...args: any[]) => void
   ): () => void
 }
