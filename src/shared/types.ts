@@ -339,7 +339,6 @@ export const IPC = {
 
   // Enhanced memory
   MEMORY_CONSOLIDATE: 'memory:consolidate',
-  MEMORY_EXPORT: 'memory:export',
   MEMORY_IMPORT: 'memory:import',
   MEMORY_GLOBAL_PATTERNS: 'memory:globalPatterns',
 
