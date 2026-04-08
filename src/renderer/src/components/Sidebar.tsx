@@ -1,7 +1,7 @@
-import { useUiStore } from '../store/uiStore'
+import { useUiStore, Page } from '../store/uiStore'
 
 type NavItem = {
-  id: 'board' | 'skills' | 'docs' | 'memory' | 'git' | 'outputs' | 'settings'
+  id: Page
   label: string
   icon: string
 }
@@ -11,6 +11,7 @@ const navItems: NavItem[] = [
   { id: 'skills', label: 'Skills', icon: '⚡' },
   { id: 'docs', label: 'Docs', icon: '📄' },
   { id: 'memory', label: 'Memory', icon: '🧠' },
+  { id: 'usage', label: 'Usage', icon: '📊' },
   { id: 'git', label: 'Git', icon: '⑂' },
   { id: 'outputs', label: 'Outputs', icon: '📁' }
 ]

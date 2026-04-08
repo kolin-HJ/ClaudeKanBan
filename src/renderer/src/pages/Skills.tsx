@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Skill } from '../../../shared/types'
+import { Skill, ProjectSkillConfig } from '../../../shared/types'
 import { useProjectStore } from '../store/projectStore'
 
 export default function Skills() {
-  const { activeProject } = useProjectStore()
+  const { activeProject, activeProjectId } = useProjectStore()
   const project = activeProject()
 
   const [skills, setSkills] = useState<Skill[]>([])
+  const [projectConfigs, setProjectConfigs] = useState<ProjectSkillConfig[]>([])
   const [selected, setSelected] = useState<Skill | null>(null)
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
@@ -21,11 +22,28 @@ export default function Skills() {
   const load = async () => {
     const list = await window.electronAPI.skills.list(project?.path)
     setSkills(list)
+    if (activeProjectId) {
+      const configs = await window.electronAPI.skills.projectList(activeProjectId)
+      setProjectConfigs(configs)
+    }
   }
 
   useEffect(() => {
     load()
-  }, [project?.path])
+  }, [project?.path, activeProjectId])
+
+  const isSkillActive = (skillPath: string): boolean => {
+    const config = projectConfigs.find((c) => c.skillPath === skillPath)
+    // Default: active if no config exists
+    return config ? config.active : true
+  }
+
+  const toggleSkill = async (skillPath: string) => {
+    if (!activeProjectId) return
+    const currentActive = isSkillActive(skillPath)
+    await window.electronAPI.skills.toggle(activeProjectId, skillPath, !currentActive)
+    load()
+  }
 
   const filtered = skills.filter(
     (s) =>
@@ -111,36 +129,63 @@ export default function Skills() {
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search skills…"
+            placeholder="Search skills..."
             className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500"
           />
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {filtered.map((skill) => (
-            <button
-              key={skill.filePath}
-              onClick={() => handleSelect(skill)}
-              className={`
-                w-full text-left p-2 rounded-lg transition-colors
-                ${selected?.filePath === skill.filePath
-                  ? 'bg-violet-700/30 border border-violet-600'
-                  : 'hover:bg-slate-800 border border-transparent'
-                }
-              `}
-            >
-              <div className="text-sm text-slate-200 truncate">{skill.name}</div>
-              {skill.category && (
-                <span
-                  className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block ${
-                    categoryColors[skill.category] ?? 'bg-slate-700 text-slate-300'
+          {filtered.map((skill) => {
+            const active = isSkillActive(skill.filePath)
+            return (
+              <div
+                key={skill.filePath}
+                className={`
+                  flex items-center gap-2 p-2 rounded-lg transition-colors
+                  ${selected?.filePath === skill.filePath
+                    ? 'bg-violet-700/30 border border-violet-600'
+                    : 'hover:bg-slate-800 border border-transparent'
+                  }
+                `}
+              >
+                {/* Active toggle */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleSkill(skill.filePath)
+                  }}
+                  className={`w-4 h-4 rounded shrink-0 border transition-colors ${
+                    active
+                      ? 'bg-violet-600 border-violet-500'
+                      : 'bg-slate-700 border-slate-600'
                   }`}
+                  title={active ? 'Deactivate for this project' : 'Activate for this project'}
                 >
-                  {skill.category}
-                </span>
-              )}
-            </button>
-          ))}
+                  {active && (
+                    <svg className="w-4 h-4 text-white" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z" />
+                    </svg>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => handleSelect(skill)}
+                  className={`flex-1 text-left min-w-0 ${!active ? 'opacity-50' : ''}`}
+                >
+                  <div className="text-sm text-slate-200 truncate">{skill.name}</div>
+                  {skill.category && (
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block ${
+                        categoryColors[skill.category] ?? 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {skill.category}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )
+          })}
           {filtered.length === 0 && (
             <div className="text-xs text-slate-600 text-center mt-8">
               {searchQuery ? 'No matching skills' : 'No skills found'}

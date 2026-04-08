@@ -5,6 +5,7 @@ import { useTaskStore } from '../store/taskStore'
 import { useUiStore } from '../store/uiStore'
 import { useProjectStore } from '../store/projectStore'
 import { Message, Output } from '../../../shared/types'
+import api from '../lib/ipc'
 
 export default function TaskDetailPanel() {
   const { selectedTaskId, selectTask, openOutputPreview } = useUiStore()
@@ -12,6 +13,8 @@ export default function TaskDetailPanel() {
   useProjectStore()
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [asanaConfirm, setAsanaConfirm] = useState(false)
+  const [asanaSyncing, setAsanaSyncing] = useState(false)
 
   const task = tasks.find((t) => t.id === selectedTaskId)
   const taskMessages: Message[] = messages[selectedTaskId ?? ''] ?? []
@@ -69,12 +72,21 @@ export default function TaskDetailPanel() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          {task.asanaGid && task.status !== 'done' && (
+            <span className="text-xs text-blue-400 mr-1" title="Linked to Asana">Asana</span>
+          )}
           {task.status !== 'done' && (
             <button
-              onClick={() => updateTaskStatus(task.id, 'done')}
+              onClick={() => {
+                if (task.asanaGid) {
+                  setAsanaConfirm(true)
+                } else {
+                  updateTaskStatus(task.id, 'done')
+                }
+              }}
               className="text-xs px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded transition-colors"
             >
-              Done ✓
+              Done
             </button>
           )}
           <button
@@ -218,6 +230,55 @@ export default function TaskDetailPanel() {
           </>
         )}
       </div>
+
+      {/* Asana completion confirmation dialog */}
+      {asanaConfirm && task?.asanaGid && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 w-80 shadow-2xl">
+            <h3 className="text-sm font-semibold text-slate-100 mb-2">Complete on Asana?</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              This task is linked to Asana. Would you like to mark it as completed on Asana too?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setAsanaSyncing(true)
+                  try {
+                    await api.asana.completeTask(
+                      task.asanaGid!,
+                      `Completed via ClaudeKanBan`
+                    )
+                  } catch {
+                    // Asana sync failure is non-blocking
+                  }
+                  await updateTaskStatus(task.id, 'done')
+                  setAsanaConfirm(false)
+                  setAsanaSyncing(false)
+                }}
+                disabled={asanaSyncing}
+                className="flex-1 px-3 py-2 text-xs bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg transition-colors font-medium"
+              >
+                {asanaSyncing ? 'Syncing...' : 'Yes, complete on Asana'}
+              </button>
+              <button
+                onClick={async () => {
+                  await updateTaskStatus(task.id, 'done')
+                  setAsanaConfirm(false)
+                }}
+                className="flex-1 px-3 py-2 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors"
+              >
+                No, just locally
+              </button>
+            </div>
+            <button
+              onClick={() => setAsanaConfirm(false)}
+              className="w-full mt-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

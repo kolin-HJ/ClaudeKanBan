@@ -1,14 +1,17 @@
+import { useState } from 'react'
 import { useProjectStore } from '../store/projectStore'
 import { useUiStore } from '../store/uiStore'
 import KanbanBoard from '../components/KanbanBoard'
 import TaskDetailPanel from '../components/TaskDetailPanel'
 import ScheduledTasksSection from '../components/ScheduledTasksSection'
 import RecentOutputsSection from '../components/RecentOutputsSection'
+import AsanaImportModal from '../components/AsanaImportModal'
 
 export default function Board() {
   const { activeProject } = useProjectStore()
   const { selectedTaskId, openCreateTask } = useUiStore()
   const project = activeProject()
+  const [asanaOpen, setAsanaOpen] = useState(false)
 
   if (!project) {
     return (
@@ -35,6 +38,12 @@ export default function Board() {
           <span className="text-xs text-slate-600">{project.path}</span>
           <div className="flex-1" />
           <button
+            onClick={() => setAsanaOpen(true)}
+            className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors font-medium"
+          >
+            Import from Asana
+          </button>
+          <button
             onClick={openCreateTask}
             className="px-3 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors font-medium"
           >
@@ -56,6 +65,9 @@ export default function Board() {
 
       {/* Task detail panel */}
       {selectedTaskId && <TaskDetailPanel />}
+
+      {/* Asana import modal */}
+      {asanaOpen && <AsanaImportModal onClose={() => setAsanaOpen(false)} />}
     </div>
   )
 }

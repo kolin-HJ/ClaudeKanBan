@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDb } from './db'
-import { registerIpcHandlers } from './ipc-handlers'
+import { registerIpcHandlers, claudeManager } from './ipc-handlers'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -57,6 +57,11 @@ app.whenReady().then(() => {
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// Graceful shutdown: terminate all active Claude sessions before quitting
+app.on('before-quit', () => {
+  claudeManager.terminateAll()
 })
 
 app.on('window-all-closed', () => {
