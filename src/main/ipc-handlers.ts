@@ -16,6 +16,11 @@ const memoryManager = new MemoryManager()
 const skillsManager = new SkillsManager()
 const insightsManager = new InsightsManager(memoryManager)
 
+// Wire up insight generation callback so ClaudeManager triggers it on session end
+claudeManager.setInsightCallback((sessionId: string) => {
+  insightsManager.generateInsight(sessionId)
+})
+
 export { claudeManager }
 
 export function registerIpcHandlers(): void {

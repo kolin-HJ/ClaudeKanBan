@@ -76,10 +76,12 @@ export class MemoryManager {
       .all(query, projectId) as any[]
 
     if (rows.length > 0) {
-      const ids = rows.map((r) => `'${r.id}'`).join(',')
-      getDb()
-        .prepare(`UPDATE memories SET last_referenced = datetime('now') WHERE id IN (${ids})`)
-        .run()
+      const updateStmt = getDb().prepare(
+        `UPDATE memories SET last_referenced = datetime('now') WHERE id = ?`
+      )
+      for (const row of rows) {
+        updateStmt.run(row.id)
+      }
     }
 
     return rows.map(rowToMemory)

@@ -42,11 +42,19 @@ interface SpawnOptions {
   envOverrides?: Record<string, string>
 }
 
+// Callback type for generating insights after session finalization
+type InsightCallback = (sessionId: string) => void
+
 export class ClaudeManager {
   private sessions = new Map<string, SessionState>()
   private locks = new Set<string>()
   private maxConcurrentSessions = 10
   private shuttingDown = false
+  private onSessionComplete: InsightCallback | null = null
+
+  setInsightCallback(cb: InsightCallback): void {
+    this.onSessionComplete = cb
+  }
 
   async spawn(opts: SpawnOptions): Promise<void> {
     if (this.shuttingDown) {
@@ -181,11 +189,11 @@ export class ClaudeManager {
         this.sessions.delete(opts.taskId)
         this.locks.delete(opts.taskId)
       })
-    } finally {
-      // Lock is removed in exit/error handlers above; remove here only if spawn itself threw
-      if (!this.sessions.has(opts.taskId)) {
-        this.locks.delete(opts.taskId)
-      }
+    } catch (err) {
+      // Explicitly clean up lock if spawn setup fails before process events are wired
+      this.locks.delete(opts.taskId)
+      this.sessions.delete(opts.taskId)
+      throw err
     }
   }
 
@@ -236,6 +244,15 @@ export class ClaudeManager {
       durationSecs,
       final: true
     })
+
+    // Generate session insights (async, fire-and-forget)
+    if (this.onSessionComplete) {
+      try {
+        this.onSessionComplete(state.sessionDbId)
+      } catch {
+        // Insight generation failure shouldn't crash the app
+      }
+    }
   }
 
   private calculateCost(state: SessionState): number {
@@ -300,6 +317,8 @@ export class ClaudeManager {
           cacheWriteTokens: state.cacheWriteTokens,
           estimatedCostUsd: this.calculateCost(state),
           toolsUsed: state.toolsUsed,
+          filesCreated: state.filesCreated,
+          filesRead: state.filesRead,
           startedAt: state.startedAt,
           final: false
         })
