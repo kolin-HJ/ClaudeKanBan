@@ -1,162 +1,218 @@
 # ClaudeKanBan
 
-A local desktop app for managing [Claude Code](https://claude.ai/code) sessions like a project owner, not a developer.
+**The Claude Code Overseer & Manager** -- a desktop app that turns Claude Code into a managed, observable, multi-project AI engineering platform.
 
-Stop staring at terminals. Start managing goals.
-
-![ClaudeKanBan screenshot placeholder](docs/screenshot.png)
+Stop staring at terminals. Start managing agents.
 
 ---
 
-## What it does
+## Why ClaudeKanBan
 
-ClaudeKanBan wraps Claude Code sessions in a Kanban board that maps naturally to the back-and-forth rhythm of AI-assisted work:
+Running Claude Code in a terminal is powerful for single tasks. But when you're managing multiple projects, running parallel sessions, and need to understand where your tokens are going -- you need something more.
 
-| Column | Meaning |
-|--------|---------|
-| **Your Turn** | Claude finished — you need to review or reply |
-| **Claude's Turn** | Active session running, Claude is working |
-| **Done** | Goal completed |
-
-Each card is a *goal*, not a file. You describe what you want, Claude works on it in your project directory, and the card moves as the conversation progresses.
+ClaudeKanBan wraps Claude Code sessions in a goal-driven Kanban board with full usage analytics, persistent memory, session insights, security monitoring, and multi-project workspace management.
 
 ---
 
 ## Features
 
-- **Project tabs** — each project links to a local git repo; sessions run in that directory
-- **Goal-oriented Kanban** — create goals with a depth level (Quick / Campaign / Deep Build) and a permission mode
-- **Live session streaming** — Claude's `stream-json` output is parsed and displayed in real time
-- **Memory system** — per-project SQLite + FTS5 index of observations; injected as context at session start
-- **Skills manager** — view, edit, and create Claude skill `.md` files with full markdown rendering
-- **Docs manager** — edit `CLAUDE.md`, `brand.md`, `context.md`, and `README.md` directly in the app
-- **Git panel** — stage, commit, push, pull, branch, and checkout without leaving the app
-- **GitHub integration** — list open PRs, create PRs, list issues
-- **Scheduled tasks** — view and manage Claude Code cron hooks from `~/.claude/settings.json`
-- **Recent outputs** — browse and preview all files generated across tasks
+### Core: Goal-Based Session Management
+- **Kanban board** with 3 columns: Your Turn / Claude's Turn / Done
+- **Multi-turn conversations** -- sessions stay alive for back-and-forth dialogue
+- **Task depth levels** -- Quick (one-shot), Campaign (multi-step), Deep Build (phased planning + execution)
+- **Permission modes** -- Default (confirms actions) or Full Auto (`--dangerously-skip-permissions`)
+- **Auto-start** -- create a goal and launch Claude in one click
+
+### Usage Tracking & Token Analytics
+- **Live status bar** showing active sessions, token counts, and real-time cost estimates
+- **Weekly/daily usage dashboards** with bar charts and trend analysis
+- **Tool frequency analysis** -- see which tools (Read, Edit, Bash, etc.) Claude uses most
+- **Per-project and per-session cost breakdowns**
+- **Cost anomaly detection** -- alerts when a session costs 5x+ above the project average
+
+### Session Insights & Learnings
+- **Auto-generated insights** on session completion: token breakdown, tools used, files touched, duration
+- **Learning extraction** -- key decisions and patterns auto-captured from Claude's messages
+- **Promote to Memory** -- save any extracted learning as a permanent project memory with one click
+- **Session history** with expandable detail cards
+
+### Persistent Memory System
+- **FTS5 full-text search** across all project memories
+- **Auto-capture** learnings from completed sessions
+- **Memory consolidation** -- merge duplicate/similar memories (Jaccard similarity)
+- **Relevance decay** -- old unreferenced memories gradually lose weight
+- **Cross-project patterns** -- high-relevance patterns shared globally across all projects
+- **Import/Export** memories as JSON for backup or sharing
+- **Memory types**: Project Context, Task Learning, Feedback, Pattern, Blocker
+- **Categories**: Architecture, Convention, Debugging, Performance, Brand Voice, Workflow, Dependency
+
+### Per-Project Plugin/Skill System
+- **Skill files** (`.md`) managed per-project with toggle activation
+- **Per-project configuration** -- enable/disable skills per project with priority ordering
+- **Active skills auto-injected** into Claude session context on spawn
+- **Fetch from URL** -- import skills directly from GitHub
+- **Global + local scopes** -- `~/.claude/skills/` (all projects) and `<project>/.claude/skills/`
+
+### Git Worktree Isolation
+- **Optional per-task worktrees** -- each session gets its own git branch (`task/<id>`)
+- Prevents merge conflicts when running parallel agents on the same project
+- Toggle on/off in Settings
+- Falls back gracefully if worktree creation fails
+
+### Multi-Project Workspace
+- **Project tabs** with per-tab state persistence (current page, selected task, scroll position)
+- **Session status indicators** on tabs: green = running, yellow = waiting input
+- **Right-click context menu**: Close, Close Others, Close to Right
+- **Keyboard shortcuts**: `Ctrl+Tab` / `Ctrl+Shift+Tab` to cycle, `Ctrl+W` to close
+
+### Security Posture Scoring
+- **Per-session security score** (0-100) based on:
+  - Dangerous tool usage (`rm -rf`, `sudo`, `curl | sh`)
+  - Secret exposure detection (API keys, tokens, private keys in tool inputs)
+  - Permission mode (full-auto sessions score lower)
+- **Project-level security history**
+- Regex patterns for: GitHub tokens, OpenAI keys, AWS credentials, private keys
+
+### Session Checkpointing
+- **Auto-checkpoints** every 50k tokens
+- Final checkpoint on session completion
+- Captures: token counts, tools used, files created/read, security flags
+- Foundation for future session time-travel / replay
+
+### Native OS Notifications
+- **Desktop notifications** on session complete, error, or termination
+- Shows duration, token count, and cost
+- Cost anomaly alerts also trigger notifications
+
+### Built-in Git Panel
+- Stage/unstage, commit, push, pull, branch, checkout
+- View diffs per file
+- Create branches
+
+### GitHub Integration
+- List open PRs and issues
+- Create PRs from within the app
+- Auto-detects GitHub remote on project creation
+
+### Documentation Manager
+- Edit `CLAUDE.md`, `README.md`, `brand.md`, `context.md` per project
+- Live markdown rendering
 
 ---
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) 18+
-- [Claude Code CLI](https://claude.ai/code) installed and authenticated (`claude` must be on your PATH)
-- Git (for git features)
-- A GitHub Personal Access Token with `repo` scope (optional, for PR features)
+- **Node.js** 18+
+- **Claude Code CLI** installed and on your PATH (`claude --version` should work)
+- **Git** (for git features and worktree isolation)
+- **GitHub Personal Access Token** with `repo` scope (optional, for PR features)
 
 ---
 
-## Install
+## Quick Start
 
 ```bash
-git clone https://github.com/your-username/ClaudeKanBan.git
+git clone https://github.com/kolin-HJ/ClaudeKanBan.git
 cd ClaudeKanBan
 npm install
 npm run dev
 ```
 
-That's it. No database setup, no environment config required. The app creates `~/.claude/claudekanban.db` on first run.
+No database setup needed. SQLite database auto-created on first launch.
 
 ---
 
-## Build
+## Build & Distribute
 
 ```bash
-npm run build
+npm run build        # Compile to out/
+npm run dist         # Build distributable (NSIS installer for Windows, DMG for macOS, AppImage for Linux)
 ```
-
-Produces a Windows NSIS installer in `dist/`. The app bundles its own SQLite binary — no system dependencies needed.
 
 ---
 
 ## Usage
 
-### Add a project
+### 1. Add a Project
+Click **+ Add Project** in the tab bar, browse to any local git repository.
 
-1. Click **+ Add Project** in the tab bar
-2. Browse to any local git repository
-3. The project is ready — tasks you create will run Claude sessions in that folder
+### 2. Create a Goal
+Click **+ New Goal** on the board. Describe what you want Claude to do, pick a depth and permission level. Check "Start immediately" to launch the session.
 
-### Create a goal
+### 3. Converse
+Click any card to open the detail panel. Claude's responses stream in real time. Type your reply and press `Ctrl+Enter`.
 
-1. Click **+ New Goal** on the board
-2. Write what you want Claude to do
-3. Choose a depth:
-   - **Quick** — single-shot task (blog post, code review, quick script)
-   - **Campaign** — multi-turn conversation with a clear end state
-   - **Deep Build** — phased project (plan → implement → test)
-4. Choose a permission mode:
-   - **Default** — Claude asks before modifying files
-   - **Full Auto** — Claude proceeds without confirmation (`--dangerously-skip-permissions`)
-5. Optionally check **Start immediately** to spawn the session right away
+### 4. Track Usage
+Switch to the **Usage** tab to see token consumption, costs, tool frequency, and session insights. The live status bar at the bottom always shows active session counts and weekly totals.
 
-### Reply to Claude
+### 5. Manage Memory
+The **Memory** tab shows all stored observations. Add memories manually or let the system auto-capture learnings. Use **Consolidate** to merge duplicates, **Export/Import** for backups.
 
-Click any card to open the detail panel. Type your message and press **Ctrl+Enter** (or click Send).
-
-### Memory
-
-Switch to the **Memory** tab to see all observations stored for the active project. Add memories manually ("this project uses Supabase Edge Functions, not API routes"), or capture them automatically after a task completes.
-
-Memories are injected into every new Claude session as a context block, so Claude always knows the important project-specific facts.
-
-### Skills
-
-Switch to the **Skills** tab to manage reusable `.md` skills from `~/.claude/skills/` and `<project>/.claude/skills/`. Skills are rendered as formatted markdown, not raw text. You can:
-- Edit any skill in-place and save directly to disk
-- Add a skill by pasting a GitHub URL (fetched automatically)
-- Write a description and generate a skill using Claude
-
-### Git
-
-Switch to the **Git** tab for a VS Code-style source control panel:
-- See staged and unstaged changes side by side
-- Click any file to view its diff
-- Stage/unstage individual files or all at once
-- Write a commit message and commit
-- Push, pull, create branches, checkout
+### 6. Configure Skills
+The **Skills** tab shows available skills with per-project toggle switches. Active skills are automatically included in Claude's context when sessions start.
 
 ---
 
-## Project structure
+## Architecture
 
 ```
 src/
-├── main/               # Electron main process
-│   ├── index.ts        # App init, window creation
-│   ├── ipc-handlers.ts # All IPC request handlers
-│   ├── claude-manager.ts   # Spawn & monitor claude CLI processes
-│   ├── git-manager.ts      # simple-git wrapper
-│   ├── github-manager.ts   # Octokit PR/issue calls
-│   ├── memory-manager.ts   # SQLite FTS5 memory CRUD
-│   ├── skills-manager.ts   # Read/write skill .md files
-│   └── db.ts               # SQLite connection + migrations
+├── main/                       # Electron main process (Node.js)
+│   ├── index.ts                # App init, window, process cleanup
+│   ├── claude-manager.ts       # Claude CLI subprocess management, usage tracking,
+│   │                           # notifications, checkpointing, security scanning
+│   ├── ipc-handlers.ts         # 40+ IPC request handlers organized by domain
+│   ├── insights-manager.ts     # Post-session insight generation + learning extraction
+│   ├── memory-manager.ts       # FTS5 memory CRUD, consolidation, decay, cross-project
+│   ├── skills-manager.ts       # Skill .md file I/O with frontmatter parsing
+│   ├── git-manager.ts          # simple-git wrapper
+│   ├── github-manager.ts       # Octokit PR/issue API
+│   └── db.ts                   # SQLite init + versioned migrations
 ├── preload/
-│   └── index.ts        # contextBridge IPC API
+│   └── index.ts                # contextBridge IPC API (12 namespaces, 60+ methods)
 ├── renderer/src/
-│   ├── App.tsx
-│   ├── components/     # KanbanBoard, TaskCard, TaskDetailPanel, …
-│   ├── pages/          # Board, Skills, Docs, Memory, GitView, Outputs, Settings
-│   └── store/          # Zustand stores (project, task, ui)
+│   ├── App.tsx                 # Root layout with error boundary, status bar, event wiring
+│   ├── pages/                  # Board, Skills, Docs, Memory, Usage, GitView, Outputs, Settings
+│   ├── components/             # KanbanBoard, TaskDetailPanel, ProjectTabs, Sidebar,
+│   │                           # UsageStatusBar, ErrorBoundary, CreateTaskModal, OutputPreview
+│   └── store/                  # Zustand stores: project, task, ui, usage
 └── shared/
-    └── types.ts        # Shared TypeScript types
+    └── types.ts                # 20+ interfaces, 50+ IPC channel constants
 ```
+
+### Database Schema (SQLite + WAL + FTS5)
+
+| Table | Purpose |
+|-------|---------|
+| `projects` | Project metadata + GitHub remote |
+| `tasks` | Goals with status, depth, permission |
+| `messages` | Conversation history (user/claude) |
+| `outputs` | File artifacts with previews |
+| `memories` | Project knowledge with FTS5 search |
+| `sessions` | Usage records (tokens, cost, duration) |
+| `tool_usage` | Every tool call with inputs |
+| `context_events` | Files read, searches, bash commands |
+| `session_insights` | Post-session analytics |
+| `session_checkpoints` | Periodic state snapshots |
+| `security_scores` | Per-session security posture |
+| `project_skills` | Per-project skill activation |
+| `app_settings` | Key-value app configuration |
 
 ---
 
-## Tech stack
+## Tech Stack
 
 | Layer | Library |
 |-------|---------|
-| App shell | Electron 30 + electron-vite |
+| Desktop shell | Electron 33 + electron-vite |
 | Frontend | React 18 + TypeScript + Vite |
-| Styling | Tailwind CSS |
-| State | Zustand |
+| Styling | Tailwind CSS 3 |
+| State management | Zustand |
 | Database | SQLite via better-sqlite3 (WAL + FTS5) |
-| Git | simple-git |
+| Git operations | simple-git |
 | GitHub API | @octokit/rest |
 | Markdown | react-markdown + remark-gfm |
-| File watch | chokidar |
+| IDs | uuid v4 |
 
 ---
 
@@ -164,11 +220,25 @@ src/
 
 | Location | Purpose |
 |----------|---------|
-| `~/.claude/claudekanban.db` | App database (projects, tasks, messages, memories) |
+| `<userData>/app.db` | App database (all tables) |
 | `~/.claude/github-token` | GitHub personal access token |
-| `~/.claude/skills/` | Global skills available to all projects |
+| `~/.claude/settings.json` | Claude Code hooks/scheduled tasks |
+| `~/.claude/skills/` | Global skills (all projects) |
 | `<project>/.claude/skills/` | Project-local skills |
-| `<project>/.claude/memories.md` | Memory context file written for standalone Claude sessions |
+| `<project>/.claude/memories.md` | Auto-generated memory file |
+| `<project>/.worktrees/` | Git worktrees for isolated sessions |
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Enter` | Send message in task panel |
+| `Ctrl+Tab` | Next project tab |
+| `Ctrl+Shift+Tab` | Previous project tab |
+| `Ctrl+W` | Close current project tab |
+| `Esc` | Close modal / deselect task |
 
 ---
 
