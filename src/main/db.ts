@@ -142,3 +142,27 @@ const migration001 = `
     VALUES ('delete', old.rowid, old.content, old.category, old.type);
   END;
 `
+
+// Adds mempalace-inspired fields: room (topic domain), layer (injection priority 0-3),
+// verbatim (raw source text), reference_count, and memory_links (tunnels between memories)
+const migration002 = `
+  ALTER TABLE memories ADD COLUMN room TEXT;
+  ALTER TABLE memories ADD COLUMN layer INTEGER NOT NULL DEFAULT 2;
+  ALTER TABLE memories ADD COLUMN verbatim TEXT;
+  ALTER TABLE memories ADD COLUMN reference_count INTEGER NOT NULL DEFAULT 0;
+
+  CREATE TABLE IF NOT EXISTS memory_links (
+    id           TEXT PRIMARY KEY,
+    source_id    TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    target_id    TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    relationship TEXT NOT NULL DEFAULT 'related'
+                 CHECK(relationship IN ('related','contradicts','extends','supersedes')),
+    created_at   TEXT DEFAULT (datetime('now')),
+    UNIQUE(source_id, target_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
+  CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target_id);
+  CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(project_id, layer, deleted_at);
+  CREATE INDEX IF NOT EXISTS idx_memories_room ON memories(project_id, room, deleted_at);
+`
