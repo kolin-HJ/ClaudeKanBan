@@ -1,0 +1,27 @@
+{
+  appId: "com.claudekanban.app",
+  productName: "ClaudeKanBan",
+  directories: {
+    buildResources: "build"
+  },
+  files: [
+    "out/**/*"
+  ],
+  win: {
+    target: [
+      {
+        target: "nsis",
+        arch: ["x64"]
+      },
+      {
+        target: "portable",
+        arch: ["x64"]
+      }
+    ]
+  },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true
+  },
+  npmRebuild: true
+}
