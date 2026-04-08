@@ -93,6 +93,18 @@ interface ElectronAPI {
     get(id: string): Promise<any>
     promoteLearning(projectId: string, learning: string): Promise<void>
   }
+  asana: {
+    verify(): Promise<{ ok: boolean; name?: string; email?: string; error?: string }>
+    setToken(token: string): Promise<void>
+    getToken(): Promise<string | null>
+    workspaces(): Promise<any[]>
+    projects(workspaceGid: string): Promise<any[]>
+    sections(projectGid: string): Promise<any[]>
+    tasks(projectGid: string): Promise<any[]>
+    taskDetail(taskGid: string): Promise<any>
+    completeTask(taskGid: string, comment?: string): Promise<void>
+    addComment(taskGid: string, text: string): Promise<void>
+  }
   checkpoints: {
     list(sessionId: string): Promise<any[]>
     get(checkpointId: string): Promise<any>

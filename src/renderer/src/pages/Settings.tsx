@@ -13,6 +13,12 @@ export default function Settings() {
   const [defaultPermission, setDefaultPermission] = useState('default')
   const [useWorktree, setUseWorktree] = useState(false)
   const [activeSessions, setActiveSessions] = useState<any[]>([])
+  const [asanaToken, setAsanaToken] = useState('')
+  const [asanaStatus, setAsanaStatus] = useState<{
+    ok: boolean; name?: string; email?: string; error?: string
+  } | null>(null)
+  const [asanaExisting, setAsanaExisting] = useState<string | null>(null)
+  const [asanaSaving, setAsanaSaving] = useState(false)
 
   useEffect(() => {
     // Check Claude CLI on mount
@@ -25,6 +31,13 @@ export default function Settings() {
     })
     api.settings.get('useWorktreeIsolation').then((v: any) => {
       if (v === 'true' || v === true) setUseWorktree(true)
+    })
+    // Load Asana status
+    api.asana.getToken().then((t: any) => {
+      if (t) {
+        setAsanaExisting(t)
+        api.asana.verify().then(setAsanaStatus).catch(() => {})
+      }
     })
     api.settings.get('defaultPermission').then((v: any) => {
       if (v) setDefaultPermission(v)
@@ -195,6 +208,64 @@ export default function Settings() {
         </div>
         <p className="text-xs text-slate-600 mt-2">
           Token is stored in <code className="text-slate-500">~/.claude/github-token</code>
+        </p>
+      </section>
+
+      {/* Asana Integration */}
+      <section>
+        <h2 className="text-sm font-semibold text-slate-300 mb-1">Asana Integration</h2>
+        <p className="text-xs text-slate-500 mb-3">
+          Connect to Asana to import tasks and sync completion status. Create a{' '}
+          <button
+            onClick={() => api.system.openExternal('https://app.asana.com/0/my-apps')}
+            className="text-violet-400 hover:text-violet-300 underline"
+          >
+            Personal Access Token
+          </button>{' '}
+          in your Asana account settings.
+        </p>
+
+        {/* Connection status */}
+        {asanaStatus && (
+          <div className={`mb-3 px-3 py-2 rounded text-xs ${
+            asanaStatus.ok
+              ? 'bg-emerald-900/30 border border-emerald-800 text-emerald-300'
+              : 'bg-red-900/30 border border-red-800 text-red-300'
+          }`}>
+            {asanaStatus.ok
+              ? `Connected as ${asanaStatus.name} (${asanaStatus.email})`
+              : `Connection failed: ${asanaStatus.error}`
+            }
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={asanaToken}
+            onChange={(e) => setAsanaToken(e.target.value)}
+            placeholder={asanaExisting ? 'Token saved (enter new to replace)' : '0/xxxxxxxxx'}
+            className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500"
+          />
+          <button
+            onClick={async () => {
+              if (!asanaToken.trim()) return
+              setAsanaSaving(true)
+              await api.asana.setToken(asanaToken.trim())
+              const result = await api.asana.verify()
+              setAsanaStatus(result)
+              setAsanaExisting('••••••••')
+              setAsanaToken('')
+              setAsanaSaving(false)
+            }}
+            disabled={!asanaToken.trim() || asanaSaving}
+            className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-lg transition-colors"
+          >
+            {asanaSaving ? 'Verifying...' : 'Connect'}
+          </button>
+        </div>
+        <p className="text-xs text-slate-600 mt-2">
+          Token is stored in <code className="text-slate-500">~/.claude/asana-token</code>
         </p>
       </section>
 

@@ -32,6 +32,8 @@ export interface Task {
   permission: TaskPermission
   createdAt: string
   updatedAt: string
+  asanaGid?: string
+  asanaPermalink?: string
 }
 
 export interface Message {
@@ -192,6 +194,18 @@ export interface LiveSessionUsage {
   startedAt: number
 }
 
+export interface AsanaTaskRef {
+  gid: string
+  name: string
+  notes: string
+  completed: boolean
+  dueOn?: string
+  assigneeName?: string
+  sectionName?: string
+  tags?: string[]
+  permalink?: string
+}
+
 export interface SessionCheckpoint {
   id: string
   sessionId: string
@@ -310,6 +324,18 @@ export const IPC = {
   // Security
   SECURITY_SCORE: 'security:score',
   SECURITY_PROJECT_SCORES: 'security:projectScores',
+
+  // Asana integration
+  ASANA_VERIFY: 'asana:verify',
+  ASANA_SET_TOKEN: 'asana:setToken',
+  ASANA_GET_TOKEN: 'asana:getToken',
+  ASANA_WORKSPACES: 'asana:workspaces',
+  ASANA_PROJECTS: 'asana:projects',
+  ASANA_SECTIONS: 'asana:sections',
+  ASANA_TASKS: 'asana:tasks',
+  ASANA_TASK_DETAIL: 'asana:taskDetail',
+  ASANA_COMPLETE_TASK: 'asana:completeTask',
+  ASANA_ADD_COMMENT: 'asana:addComment',
 
   // App settings
   SETTINGS_GET: 'settings:get',

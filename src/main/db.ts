@@ -39,7 +39,8 @@ function runMigrations(): void {
 
   const migrations: { version: number; sql: string }[] = [
     { version: 1, sql: migration001 },
-    { version: 2, sql: migration002 }
+    { version: 2, sql: migration002 },
+    { version: 3, sql: migration003 }
   ]
 
   for (const migration of migrations) {
@@ -251,4 +252,10 @@ const migration002 = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_security_project ON security_scores(project_id, created_at);
+`
+
+const migration003 = `
+  -- Link local tasks to Asana tasks
+  ALTER TABLE tasks ADD COLUMN asana_gid TEXT;
+  ALTER TABLE tasks ADD COLUMN asana_permalink TEXT;
 `

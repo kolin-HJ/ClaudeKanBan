@@ -8,6 +8,7 @@ import { GithubManager } from './github-manager'
 import { MemoryManager } from './memory-manager'
 import { SkillsManager } from './skills-manager'
 import { InsightsManager } from './insights-manager'
+import { AsanaManager } from './asana-manager'
 
 const claudeManager = new ClaudeManager()
 const gitManager = new GitManager()
@@ -15,6 +16,7 @@ const githubManager = new GithubManager()
 const memoryManager = new MemoryManager()
 const skillsManager = new SkillsManager()
 const insightsManager = new InsightsManager(memoryManager)
+const asanaManager = new AsanaManager()
 
 // Wire up insight generation callback so ClaudeManager triggers it on session end
 claudeManager.setInsightCallback((sessionId: string) => {
@@ -39,6 +41,7 @@ export function registerIpcHandlers(): void {
   registerInsightsHandlers()
   registerCheckpointHandlers()
   registerSecurityHandlers()
+  registerAsanaHandlers()
   registerSettingsHandlers()
   registerSystemHandlers()
 }
@@ -100,14 +103,14 @@ function registerTaskHandlers(): void {
 
   ipcMain.handle(
     IPC.TASKS_CREATE,
-    (_e, projectId: string, opts: { title: string; description?: string; depth: string; permission: string }) => {
+    (_e, projectId: string, opts: { title: string; description?: string; depth: string; permission: string; asanaGid?: string; asanaPermalink?: string }) => {
       const id = uuidv4()
       getDb()
         .prepare(
-          `INSERT INTO tasks (id, project_id, title, description, status, depth, permission)
-           VALUES (?, ?, ?, ?, 'in-progress', ?, ?)`
+          `INSERT INTO tasks (id, project_id, title, description, status, depth, permission, asana_gid, asana_permalink)
+           VALUES (?, ?, ?, ?, 'in-progress', ?, ?, ?, ?)`
         )
-        .run(id, projectId, opts.title, opts.description ?? null, opts.depth, opts.permission)
+        .run(id, projectId, opts.title, opts.description ?? null, opts.depth, opts.permission, opts.asanaGid ?? null, opts.asanaPermalink ?? null)
       return rowToTask(getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any)
     }
   )
@@ -138,7 +141,9 @@ function rowToTask(row: any): Task {
     depth: row.depth,
     permission: row.permission,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    asanaGid: row.asana_gid,
+    asanaPermalink: row.asana_permalink
   }
 }
 
@@ -884,6 +889,53 @@ function registerSecurityHandlers(): void {
       createdAt: r.created_at,
       taskTitle: r.task_title
     }))
+  })
+}
+
+// ─── Asana ────────────────────────────────────────────────────────────────────
+
+function registerAsanaHandlers(): void {
+  ipcMain.handle(IPC.ASANA_VERIFY, async () => {
+    return asanaManager.verifyConnection()
+  })
+
+  ipcMain.handle(IPC.ASANA_SET_TOKEN, (_e, token: string) => {
+    asanaManager.setToken(token)
+  })
+
+  ipcMain.handle(IPC.ASANA_GET_TOKEN, () => {
+    return asanaManager.getToken() ? '••••••••' : null
+  })
+
+  ipcMain.handle(IPC.ASANA_WORKSPACES, async () => {
+    return asanaManager.listWorkspaces()
+  })
+
+  ipcMain.handle(IPC.ASANA_PROJECTS, async (_e, workspaceGid: string) => {
+    return asanaManager.listProjects(workspaceGid)
+  })
+
+  ipcMain.handle(IPC.ASANA_SECTIONS, async (_e, projectGid: string) => {
+    return asanaManager.listSections(projectGid)
+  })
+
+  ipcMain.handle(IPC.ASANA_TASKS, async (_e, projectGid: string) => {
+    return asanaManager.listTasks(projectGid)
+  })
+
+  ipcMain.handle(IPC.ASANA_TASK_DETAIL, async (_e, taskGid: string) => {
+    return asanaManager.getTask(taskGid)
+  })
+
+  ipcMain.handle(IPC.ASANA_COMPLETE_TASK, async (_e, taskGid: string, comment?: string) => {
+    if (comment) {
+      await asanaManager.addComment(taskGid, comment)
+    }
+    await asanaManager.completeTask(taskGid)
+  })
+
+  ipcMain.handle(IPC.ASANA_ADD_COMMENT, async (_e, taskGid: string, text: string) => {
+    await asanaManager.addComment(taskGid, text)
   })
 }
 

@@ -143,6 +143,22 @@ const api = {
       ipcRenderer.invoke(IPC.INSIGHTS_PROMOTE_LEARNING, projectId, learning)
   },
 
+  // ─── Asana ─────────────────────────────────────────────────────────────────
+  asana: {
+    verify: () => ipcRenderer.invoke(IPC.ASANA_VERIFY),
+    setToken: (token: string) => ipcRenderer.invoke(IPC.ASANA_SET_TOKEN, token),
+    getToken: () => ipcRenderer.invoke(IPC.ASANA_GET_TOKEN),
+    workspaces: () => ipcRenderer.invoke(IPC.ASANA_WORKSPACES),
+    projects: (workspaceGid: string) => ipcRenderer.invoke(IPC.ASANA_PROJECTS, workspaceGid),
+    sections: (projectGid: string) => ipcRenderer.invoke(IPC.ASANA_SECTIONS, projectGid),
+    tasks: (projectGid: string) => ipcRenderer.invoke(IPC.ASANA_TASKS, projectGid),
+    taskDetail: (taskGid: string) => ipcRenderer.invoke(IPC.ASANA_TASK_DETAIL, taskGid),
+    completeTask: (taskGid: string, comment?: string) =>
+      ipcRenderer.invoke(IPC.ASANA_COMPLETE_TASK, taskGid, comment),
+    addComment: (taskGid: string, text: string) =>
+      ipcRenderer.invoke(IPC.ASANA_ADD_COMMENT, taskGid, text)
+  },
+
   // ─── Checkpoints ────────────────────────────────────────────────────────────
   checkpoints: {
     list: (sessionId: string) => ipcRenderer.invoke(IPC.CHECKPOINTS_LIST, sessionId),

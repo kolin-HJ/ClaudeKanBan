@@ -53,6 +53,15 @@ ClaudeKanBan wraps Claude Code sessions in a goal-driven Kanban board with full 
 - **Fetch from URL** -- import skills directly from GitHub
 - **Global + local scopes** -- `~/.claude/skills/` (all projects) and `<project>/.claude/skills/`
 
+### Asana Integration
+- **Import tasks** from any Asana workspace/project directly into the Kanban board
+- **Browse & select** -- step through Workspace -> Project -> Tasks with multi-select
+- **Linked tasks** -- imported tasks carry their Asana GID so completion syncs back
+- **Completion sync** -- when you mark a task as Done, a confirmation dialog asks whether to also mark it complete on Asana (with an auto-comment)
+- **Two-way awareness** -- tasks show an "Asana" badge when linked, with permalink to the original task
+- **PAT authentication** -- uses Asana Personal Access Token stored in `~/.claude/asana-token`
+- **Configure in Settings** -- add your token, verify connection, see your Asana identity
+
 ### Git Worktree Isolation
 - **Optional per-task worktrees** -- each session gets its own git branch (`task/<id>`)
 - Prevents merge conflicts when running parallel agents on the same project
@@ -106,6 +115,7 @@ ClaudeKanBan wraps Claude Code sessions in a goal-driven Kanban board with full 
 - **Claude Code CLI** installed and on your PATH (`claude --version` should work)
 - **Git** (for git features and worktree isolation)
 - **GitHub Personal Access Token** with `repo` scope (optional, for PR features)
+- **Asana Personal Access Token** (optional, for Asana task import/sync)
 
 ---
 
@@ -166,6 +176,7 @@ src/
 │   ├── memory-manager.ts       # FTS5 memory CRUD, consolidation, decay, cross-project
 │   ├── skills-manager.ts       # Skill .md file I/O with frontmatter parsing
 │   ├── git-manager.ts          # simple-git wrapper
+│   ├── asana-manager.ts         # Asana REST API integration
 │   ├── github-manager.ts       # Octokit PR/issue API
 │   └── db.ts                   # SQLite init + versioned migrations
 ├── preload/
@@ -226,6 +237,7 @@ src/
 | `~/.claude/skills/` | Global skills (all projects) |
 | `<project>/.claude/skills/` | Project-local skills |
 | `<project>/.claude/memories.md` | Auto-generated memory file |
+| `~/.claude/asana-token` | Asana Personal Access Token |
 | `<project>/.worktrees/` | Git worktrees for isolated sessions |
 
 ---
