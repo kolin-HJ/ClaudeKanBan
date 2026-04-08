@@ -394,6 +394,29 @@ function registerMemoryHandlers(): void {
   ipcMain.handle(IPC.MEMORY_CAPTURE_TASK, (_e, taskId: string) => {
     return memoryManager.captureFromTask(taskId)
   })
+
+  ipcMain.handle(IPC.MEMORY_ROOMS, (_e, projectId: string) => {
+    return memoryManager.getRooms(projectId)
+  })
+
+  ipcMain.handle(IPC.MEMORY_LINKS_LIST, (_e, memoryId: string) => {
+    return memoryManager.getLinks(memoryId)
+  })
+
+  ipcMain.handle(
+    IPC.MEMORY_LINKS_CREATE,
+    (_e, sourceId: string, targetId: string, relationship: string) => {
+      return memoryManager.linkMemories(sourceId, targetId, relationship as any)
+    }
+  )
+
+  ipcMain.handle(IPC.MEMORY_LINKS_DELETE, (_e, linkId: string) => {
+    return memoryManager.deleteLink(linkId)
+  })
+
+  ipcMain.handle(IPC.MEMORY_EXPORT, (_e, projectId: string) => {
+    return memoryManager.export(projectId)
+  })
 }
 
 // ─── Skills ───────────────────────────────────────────────────────────────────
