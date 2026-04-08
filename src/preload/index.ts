@@ -81,7 +81,13 @@ const api = {
       ipcRenderer.invoke(IPC.MEMORY_SEARCH, projectId, query),
     contextBlock: (projectId: string, taskDescription: string) =>
       ipcRenderer.invoke(IPC.MEMORY_CONTEXT_BLOCK, projectId, taskDescription),
-    captureFromTask: (taskId: string) => ipcRenderer.invoke(IPC.MEMORY_CAPTURE_TASK, taskId)
+    captureFromTask: (taskId: string) => ipcRenderer.invoke(IPC.MEMORY_CAPTURE_TASK, taskId),
+    rooms: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_ROOMS, projectId),
+    linksList: (memoryId: string) => ipcRenderer.invoke(IPC.MEMORY_LINKS_LIST, memoryId),
+    linksCreate: (sourceId: string, targetId: string, relationship: string) =>
+      ipcRenderer.invoke(IPC.MEMORY_LINKS_CREATE, sourceId, targetId, relationship),
+    linksDelete: (linkId: string) => ipcRenderer.invoke(IPC.MEMORY_LINKS_DELETE, linkId),
+    export: (projectId: string) => ipcRenderer.invoke(IPC.MEMORY_EXPORT, projectId)
   },
 
   // ─── Skills ───────────────────────────────────────────────────────────────────
