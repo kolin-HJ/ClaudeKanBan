@@ -156,11 +156,29 @@ function registerSessionHandlers(): void {
   ipcMain.handle(IPC.SESSIONS_SEND, async (_e, taskId: string, message: string) => {
     // Save user message to DB
     const msgId = uuidv4()
+    const timestamp = new Date().toISOString()
     getDb()
       .prepare('INSERT INTO messages (id, task_id, role, content) VALUES (?, ?, ?, ?)')
       .run(msgId, taskId, 'user', message)
 
-    await claudeManager.send(taskId, message)
+    // Broadcast user message to renderer so it appears immediately
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send(IPC.EVENT_SESSION_OUTPUT, {
+        taskId,
+        type: 'message',
+        role: 'user',
+        content: message,
+        messageId: msgId,
+        timestamp
+      })
+    })
+
+    if (claudeManager.hasSession(taskId)) {
+      await claudeManager.send(taskId, message)
+    } else {
+      // Session ended — respawn with full conversation history
+      await claudeManager.spawnContinuation(taskId)
+    }
 
     // Move task to in-progress
     getDb()

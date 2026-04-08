@@ -98,24 +98,38 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   handleTaskStatusEvent: (taskId, status) => {
     set((s) => ({
-      tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, status: status as TaskStatus } : t)),
-      sessionStatuses: { ...s.sessionStatuses, [taskId]: status }
+      tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, status: status as TaskStatus } : t))
     }))
   },
 
   handleSessionOutput: (payload) => {
-    if (payload.type === 'message' && payload.role === 'claude') {
+    if (payload.type === 'message' && (payload.role === 'claude' || payload.role === 'user')) {
       const newMsg: Message = {
         id: payload.messageId,
         taskId: payload.taskId,
-        role: 'claude',
+        role: payload.role,
         content: payload.content,
-        timestamp: new Date().toISOString()
+        timestamp: payload.timestamp ?? new Date().toISOString()
       }
       set((s) => ({
         messages: {
           ...s.messages,
           [payload.taskId]: [...(s.messages[payload.taskId] ?? []), newMsg]
+        }
+      }))
+    }
+    if (payload.type === 'stderr' || payload.type === 'error') {
+      const errMsg: Message = {
+        id: crypto.randomUUID(),
+        taskId: payload.taskId,
+        role: 'system',
+        content: `[${payload.type}] ${payload.text}`,
+        timestamp: new Date().toISOString()
+      }
+      set((s) => ({
+        messages: {
+          ...s.messages,
+          [payload.taskId]: [...(s.messages[payload.taskId] ?? []), errMsg]
         }
       }))
     }

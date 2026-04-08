@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
+import { RefreshCw, ArrowUp, ArrowDown, GitBranch, Circle, Plus, ExternalLink } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { GitStatus, Branch, PullRequest } from '../../../shared/types'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Textarea } from '../components/ui/textarea'
+import { cn } from '../lib/utils'
 
 export default function GitView() {
   const { activeProjectId } = useProjectStore()
@@ -109,8 +114,8 @@ export default function GitView() {
 
   if (!activeProjectId) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-600 text-sm">
-        Select a project to manage git
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+        Select a project to view git status
       </div>
     )
   }
@@ -123,56 +128,57 @@ export default function GitView() {
     ...(status?.untracked ?? []).map((f) => ({ file: f, staged: false }))
   ]
 
+  const tabs = ['changes', 'branches', 'prs'] as const
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left panel */}
-      <div className="w-72 shrink-0 border-r border-slate-800 flex flex-col">
+      <div className="w-68 shrink-0 border-r border-border flex flex-col" style={{ width: '272px' }}>
         {/* Branch header */}
-        <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/50">
+        <div className="px-3 py-2.5 border-b border-border">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs text-slate-500">Branch:</span>
-            <span className="text-sm font-medium text-violet-300">{status?.current ?? '…'}</span>
+            <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium text-foreground truncate flex-1">
+              {status?.current ?? '...'}
+            </span>
             {(status?.ahead ?? 0) > 0 && (
-              <span className="text-xs text-amber-400">↑{status?.ahead}</span>
+              <span className="flex items-center gap-0.5 text-xs text-amber-400">
+                <ArrowUp className="w-3 h-3" />
+                {status?.ahead}
+              </span>
             )}
             {(status?.behind ?? 0) > 0 && (
-              <span className="text-xs text-red-400">↓{status?.behind}</span>
+              <span className="flex items-center gap-0.5 text-xs text-red-400">
+                <ArrowDown className="w-3 h-3" />
+                {status?.behind}
+              </span>
             )}
           </div>
           <div className="flex gap-1">
-            <button
-              onClick={handlePull}
-              className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors flex-1"
-            >
+            <Button variant="secondary" size="sm" onClick={handlePull} className="flex-1 h-7">
               Pull
-            </button>
-            <button
-              onClick={handlePush}
-              disabled={loading}
-              className="text-xs px-2 py-1 bg-violet-700 hover:bg-violet-600 text-white rounded transition-colors flex-1 disabled:opacity-40"
-            >
+            </Button>
+            <Button size="sm" onClick={handlePush} disabled={loading} className="flex-1 h-7">
               Push
-            </button>
-            <button
-              onClick={loadStatus}
-              className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
-            >
-              ↻
-            </button>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={loadStatus} className="h-7 w-7">
+              <RefreshCw className="w-3 h-3" />
+            </Button>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-800">
-          {(['changes', 'branches', 'prs'] as const).map((t) => (
+        <div className="flex border-b border-border">
+          {tabs.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 text-xs py-2 capitalize transition-colors ${
+              className={cn(
+                'flex-1 text-xs py-2 capitalize transition-colors',
                 tab === t
-                  ? 'text-slate-100 border-b-2 border-violet-500'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
+                  ? 'text-foreground border-b border-primary -mb-px'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
             >
               {t === 'prs' ? 'PRs' : t}
             </button>
@@ -184,45 +190,46 @@ export default function GitView() {
             <div className="p-2">
               {/* Staged */}
               {(status?.staged ?? []).length > 0 && (
-                <div className="mb-2">
-                  <div className="text-xs text-slate-500 uppercase tracking-wide px-1 mb-1">
+                <div className="mb-3">
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider px-1 mb-1">
                     Staged ({status?.staged.length})
                   </div>
                   {status?.staged.map((f) => (
                     <div
                       key={f}
-                      className={`flex items-center gap-1 px-2 py-1 rounded cursor-pointer hover:bg-slate-700 ${
-                        selectedFile === f ? 'bg-slate-700' : ''
-                      }`}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:bg-accent text-xs',
+                        selectedFile === f && 'bg-accent'
+                      )}
                       onClick={() => handleSelectFile(f)}
                     >
-                      <span className="text-emerald-400 text-xs">M</span>
-                      <span className="text-xs text-slate-300 flex-1 truncate">{f}</span>
+                      <span className="text-emerald-400 font-mono font-bold">M</span>
+                      <span className="text-foreground flex-1 truncate">{f}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleUnstage([f]) }}
-                        className="text-xs text-slate-500 hover:text-slate-200"
+                        className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                       >
-                        −
+                        &minus;
                       </button>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Changes */}
+              {/* Unstaged */}
               {allChangedFiles.filter((f) => !f.staged).length > 0 && (
-                <div className="mb-2">
+                <div className="mb-3">
                   <div className="flex items-center justify-between px-1 mb-1">
-                    <span className="text-xs text-slate-500 uppercase tracking-wide">
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
                       Changes ({allChangedFiles.filter((f) => !f.staged).length})
                     </span>
                     <button
                       onClick={() =>
                         handleStage(allChangedFiles.filter((f) => !f.staged).map((f) => f.file))
                       }
-                      className="text-xs text-slate-500 hover:text-slate-200"
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
-                      Stage all +
+                      Stage all
                     </button>
                   </div>
                   {allChangedFiles
@@ -230,16 +237,17 @@ export default function GitView() {
                     .map(({ file }) => (
                       <div
                         key={file}
-                        className={`flex items-center gap-1 px-2 py-1 rounded cursor-pointer hover:bg-slate-700 ${
-                          selectedFile === file ? 'bg-slate-700' : ''
-                        }`}
+                        className={cn(
+                          'flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:bg-accent text-xs group',
+                          selectedFile === file && 'bg-accent'
+                        )}
                         onClick={() => handleSelectFile(file)}
                       >
-                        <span className="text-amber-400 text-xs">M</span>
-                        <span className="text-xs text-slate-300 flex-1 truncate">{file}</span>
+                        <span className="text-amber-400 font-mono font-bold">M</span>
+                        <span className="text-foreground flex-1 truncate">{file}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleStage([file]) }}
-                          className="text-xs text-slate-500 hover:text-slate-200"
+                          className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           +
                         </button>
@@ -249,26 +257,29 @@ export default function GitView() {
               )}
 
               {allChangedFiles.length === 0 && (
-                <div className="text-xs text-slate-600 text-center mt-6">No changes</div>
+                <div className="text-xs text-muted-foreground/40 text-center mt-8">
+                  No changes
+                </div>
               )}
 
               {/* Commit */}
               {(status?.staged ?? []).length > 0 && (
-                <div className="mt-3 px-1">
-                  <textarea
+                <div className="mt-3 space-y-2">
+                  <Textarea
                     value={commitMsg}
                     onChange={(e) => setCommitMsg(e.target.value)}
-                    placeholder="Commit message…"
+                    placeholder="Commit message..."
                     rows={2}
-                    className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-100 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 mb-2"
+                    className="text-xs"
                   />
-                  <button
+                  <Button
+                    size="sm"
                     onClick={handleCommit}
                     disabled={!commitMsg.trim() || loading}
-                    className="w-full text-xs py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded transition-colors"
+                    className="w-full"
                   >
                     Commit
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -276,20 +287,22 @@ export default function GitView() {
 
           {tab === 'branches' && (
             <div className="p-2">
-              <div className="flex gap-1 mb-2">
-                <input
+              <div className="flex gap-1 mb-3">
+                <Input
                   value={newBranch}
                   onChange={(e) => setNewBranch(e.target.value)}
-                  placeholder="New branch name…"
-                  className="flex-1 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                  placeholder="New branch..."
+                  className="flex-1 h-7 text-xs"
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreateBranch()}
                 />
-                <button
+                <Button
+                  size="icon"
                   onClick={handleCreateBranch}
                   disabled={!newBranch.trim()}
-                  className="text-xs px-2 py-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded transition-colors"
+                  className="h-7 w-7"
                 >
-                  +
-                </button>
+                  <Plus className="w-3 h-3" />
+                </Button>
               </div>
               {branches
                 .filter((b) => !b.name.startsWith('remotes/'))
@@ -297,14 +310,14 @@ export default function GitView() {
                   <button
                     key={b.name}
                     onClick={() => !b.current && handleCheckout(b.name)}
-                    className={`
-                      w-full flex items-center gap-2 px-2 py-1.5 rounded text-left
-                      ${b.current ? 'bg-violet-900/30 text-violet-300' : 'hover:bg-slate-700 text-slate-300'}
-                    `}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors',
+                      b.current
+                        ? 'bg-primary/10 text-primary cursor-default'
+                        : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+                    )}
                   >
-                    <span className={b.current ? 'text-violet-400' : 'text-slate-600'}>
-                      {b.current ? '●' : '○'}
-                    </span>
+                    <Circle className={cn('w-2 h-2 shrink-0', b.current ? 'fill-primary text-primary' : 'text-muted-foreground/40')} />
                     <span className="text-xs truncate">{b.name}</span>
                   </button>
                 ))}
@@ -314,24 +327,32 @@ export default function GitView() {
           {tab === 'prs' && (
             <div className="p-2">
               {prs.length === 0 ? (
-                <div className="text-xs text-slate-600 text-center mt-6">No open PRs</div>
+                <div className="text-xs text-muted-foreground/40 text-center mt-8">No open PRs</div>
               ) : (
                 prs.map((pr) => (
-                  <div key={pr.number} className="mb-2 p-2 bg-slate-800 rounded-lg border border-slate-700">
-                    <div className="flex items-start gap-2">
-                      <span className="text-xs text-slate-500 shrink-0">#{pr.number}</span>
+                  <div
+                    key={pr.number}
+                    className="mb-2 p-2.5 bg-card border border-border rounded-md"
+                  >
+                    <div className="flex items-start gap-2 mb-1.5">
+                      <span className="text-xs text-muted-foreground shrink-0 font-mono">
+                        #{pr.number}
+                      </span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs text-slate-200 leading-snug">{pr.title}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">
+                        <div className="text-xs text-foreground leading-snug font-medium">
+                          {pr.title}
+                        </div>
+                        <div className="text-xs text-muted-foreground/60 mt-0.5 font-mono">
                           {pr.head} → {pr.base}
                         </div>
                       </div>
                     </div>
                     <button
                       onClick={() => window.electronAPI.system.openExternal(pr.url)}
-                      className="mt-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
                     >
-                      Open on GitHub →
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      Open on GitHub
                     </button>
                   </div>
                 ))
@@ -342,29 +363,29 @@ export default function GitView() {
       </div>
 
       {/* Diff viewer */}
-      <div className="flex-1 overflow-y-auto p-4 font-mono">
+      <div className="flex-1 overflow-y-auto p-4 font-mono bg-background">
         {diff ? (
           <pre className="text-xs leading-relaxed whitespace-pre-wrap">
             {diff.split('\n').map((line, i) => (
               <div
                 key={i}
                 className={
-                  line.startsWith('+')
-                    ? 'text-emerald-400'
-                    : line.startsWith('-')
-                      ? 'text-red-400'
+                  line.startsWith('+') && !line.startsWith('+++')
+                    ? 'text-emerald-400 bg-emerald-400/5'
+                    : line.startsWith('-') && !line.startsWith('---')
+                      ? 'text-red-400 bg-red-400/5'
                       : line.startsWith('@@')
-                        ? 'text-violet-400'
-                        : 'text-slate-400'
+                        ? 'text-primary/70'
+                        : 'text-muted-foreground/50'
                 }
               >
-                {line}
+                {line || ' '}
               </div>
             ))}
           </pre>
         ) : (
-          <div className="flex items-center justify-center h-full text-slate-600 text-sm">
-            Select a file to see its diff
+          <div className="flex items-center justify-center h-full text-muted-foreground/40 text-sm">
+            Select a file to view its diff
           </div>
         )}
       </div>

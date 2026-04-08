@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { X, FileText, ExternalLink } from 'lucide-react'
 import { useUiStore } from '../store/uiStore'
+import { Button } from './ui/button'
 
 interface Props {
   filePath: string
@@ -24,48 +26,50 @@ export default function OutputPreview({ filePath }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
       onClick={(e) => e.target === e.currentTarget && closeOutputPreview()}
     >
-      <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-[700px] max-w-[90vw] max-h-[80vh] flex flex-col">
+      <div className="bg-card border border-border rounded-lg shadow-2xl shadow-black/50 w-[700px] max-w-[90vw] max-h-[80vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700">
-          <span className="text-lg">📄</span>
-          <span className="font-medium text-slate-100 flex-1 truncate">{fileName}</span>
+        <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border">
+          <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          <span className="font-medium text-foreground text-sm flex-1 truncate">{fileName}</span>
           <button
             onClick={closeOutputPreview}
-            className="text-slate-400 hover:text-slate-200 transition-colors text-lg leading-none"
+            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-accent"
           >
-            ×
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
-            <div className="text-slate-500 text-sm">Loading…</div>
+            <div className="text-muted-foreground text-sm">Loading...</div>
           ) : content === null ? (
-            <div className="text-red-400 text-sm">File not found or could not be read.</div>
+            <div className="text-destructive text-sm">File not found or could not be read.</div>
           ) : isMarkdown ? (
             <div className="prose prose-invert prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
             </div>
           ) : (
-            <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap break-words">
+            <pre className="text-xs text-muted-foreground font-mono whitespace-pre-wrap break-words leading-relaxed">
               {content}
             </pre>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-slate-700">
-          <span className="text-xs text-slate-500 truncate flex-1">{filePath}</span>
-          <button
+        <div className="flex items-center gap-2 px-4 py-2.5 border-t border-border">
+          <span className="text-xs text-muted-foreground/60 truncate flex-1 font-mono">{filePath}</span>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => window.electronAPI.system.openExternal(filePath)}
-            className="text-xs px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
           >
+            <ExternalLink className="w-3 h-3" />
             Open in editor
-          </button>
+          </Button>
         </div>
       </div>
     </div>

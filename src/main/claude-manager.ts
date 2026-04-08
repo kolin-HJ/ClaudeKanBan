@@ -28,7 +28,7 @@ export class ClaudeManager {
       throw new Error(`Session already running for task ${opts.taskId}`)
     }
 
-    const args = ['--output-format', 'stream-json', '--print']
+    const args = ['--output-format', 'stream-json', '--verbose']
 
     if (opts.permission === 'full-auto') {
       args.push('--dangerously-skip-permissions')
@@ -47,13 +47,16 @@ export class ClaudeManager {
       prompt += '\n\nThis is a deep build task. Please start by creating a detailed plan with numbered phases, then execute each phase. Label each phase clearly in your responses.'
     }
 
-    args.push(prompt)
-
+    // Pass prompt via stdin to avoid shell quoting issues on Windows
     const proc = spawn('claude', args, {
       cwd: opts.projectPath,
       shell: true,
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env }
     })
+
+    // Write prompt to stdin with newline — keep stdin open for follow-up messages
+    proc.stdin?.write(prompt + '\n')
 
     const state: SessionState = {
       process: proc,
@@ -241,6 +244,10 @@ export class ClaudeManager {
     this.broadcast(IPC.EVENT_OUTPUT_CREATED, { taskId, filePath, fileName })
   }
 
+  hasSession(taskId: string): boolean {
+    return this.sessions.has(taskId)
+  }
+
   async send(taskId: string, message: string): Promise<void> {
     const state = this.sessions.get(taskId)
     if (!state) {
@@ -251,6 +258,40 @@ export class ClaudeManager {
     }
     state.process.stdin.write(message + '\n')
     state.status = 'running'
+  }
+
+  async spawnContinuation(taskId: string): Promise<void> {
+    const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any
+    if (!task) throw new Error('Task not found')
+    const project = getDb()
+      .prepare('SELECT * FROM projects WHERE id = ?')
+      .get(task.project_id) as any
+    if (!project) throw new Error('Project not found')
+
+    // Load full conversation history (includes the new user message just saved)
+    const rows = getDb()
+      .prepare('SELECT * FROM messages WHERE task_id = ? ORDER BY timestamp ASC')
+      .all(taskId) as any[]
+
+    let goal = `Task: ${task.title}`
+    if (task.description) goal += `\n\n${task.description}`
+
+    if (rows.length > 0) {
+      goal += `\n\nThis is a continuation of an existing conversation. Here is the conversation history:\n\n`
+      for (const row of rows) {
+        const speaker = row.role === 'user' ? 'Human' : row.role === 'claude' ? 'Assistant' : 'System'
+        goal += `${speaker}: ${row.content}\n\n`
+      }
+      goal += `Please respond to the latest Human message above.`
+    }
+
+    await this.spawn({
+      taskId,
+      projectPath: project.path,
+      goal,
+      depth: task.depth,
+      permission: task.permission
+    })
   }
 
   terminate(taskId: string): void {

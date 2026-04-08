@@ -34,6 +34,7 @@ export default function App() {
 
   // Wire up IPC event listeners
   useEffect(() => {
+    if (!window.electronAPI) return
     const offStatus = window.electronAPI.on('task-status', (payload) =>
       handleTaskStatusEvent(payload.taskId, payload.status)
     )
@@ -72,7 +73,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* Title bar drag region — sits behind everything, height 32px matches overlay */}
       <div className="drag-region fixed top-0 left-0 right-0 h-8 z-50 pointer-events-none" />
 

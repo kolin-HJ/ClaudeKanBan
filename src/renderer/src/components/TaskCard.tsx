@@ -1,20 +1,23 @@
 import { useEffect } from 'react'
+import { FileText } from 'lucide-react'
 import { Task } from '../../../shared/types'
 import { useTaskStore } from '../store/taskStore'
+import { Badge } from './ui/badge'
+import { cn } from '../lib/utils'
 
 interface Props {
   task: Task
   onClick: () => void
 }
 
-const depthColors: Record<string, string> = {
-  quick: 'bg-sky-900/40 text-sky-300',
-  campaign: 'bg-amber-900/40 text-amber-300',
-  'deep-build': 'bg-purple-900/40 text-purple-300'
+const depthVariant: Record<string, 'default' | 'warning' | 'info'> = {
+  quick: 'info',
+  campaign: 'warning',
+  'deep-build': 'default'
 }
 
-const statusDot: Record<string, string> = {
-  'your-turn': 'bg-violet-400',
+const statusDotClass: Record<string, string> = {
+  'your-turn': 'bg-primary',
   'in-progress': 'bg-amber-400 animate-pulse',
   done: 'bg-emerald-400'
 }
@@ -35,30 +38,28 @@ export default function TaskCard({ task, onClick }: Props) {
   return (
     <div
       onClick={onClick}
-      className="
-        bg-slate-800 border border-slate-700 rounded-lg p-3 cursor-pointer
-        hover:border-slate-600 hover:bg-slate-750 transition-all
-        group select-none
-      "
+      className={cn(
+        'bg-card border border-border rounded-md p-3 cursor-pointer',
+        'hover:border-border/80 hover:bg-accent/30 transition-all',
+        'group select-none'
+      )}
     >
       {/* Header */}
       <div className="flex items-start gap-2 mb-2">
-        <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${statusDot[task.status]}`} />
-        <span className="text-sm font-medium text-slate-100 leading-snug flex-1">
+        <span className={cn('mt-1.5 w-1.5 h-1.5 rounded-full shrink-0', statusDotClass[task.status])} />
+        <span className="text-sm font-medium text-foreground leading-snug flex-1 min-w-0">
           {task.title}
         </span>
-        <span
-          className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${depthColors[task.depth] ?? ''}`}
-        >
+        <Badge variant={depthVariant[task.depth] ?? 'muted'} className="shrink-0 ml-1">
           {task.depth}
-        </span>
+        </Badge>
       </div>
 
-      {/* Session indicator */}
+      {/* Running indicator */}
       {sessionStatus === 'running' && (
-        <div className="flex items-center gap-1 mb-2 text-xs text-amber-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-          Running…
+        <div className="flex items-center gap-1.5 mb-2 text-xs text-amber-400">
+          <span className="w-1 h-1 rounded-full bg-amber-400 animate-pulse" />
+          Running
         </div>
       )}
 
@@ -66,11 +67,14 @@ export default function TaskCard({ task, onClick }: Props) {
       {lastTwo.length > 0 && (
         <div className="space-y-1 mb-2">
           {lastTwo.map((msg) => (
-            <div key={msg.id} className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+            <div key={msg.id} className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
               <span
-                className={`font-medium mr-1 ${msg.role === 'user' ? 'text-violet-400' : 'text-emerald-400'}`}
+                className={cn(
+                  'font-medium mr-1',
+                  msg.role === 'user' ? 'text-primary/80' : 'text-emerald-400/80'
+                )}
               >
-                {msg.role === 'user' ? 'You:' : 'Claude:'}
+                {msg.role === 'user' ? 'You' : 'Claude'}
               </span>
               {msg.content}
             </div>
@@ -80,18 +84,18 @@ export default function TaskCard({ task, onClick }: Props) {
 
       {/* Outputs */}
       {taskOutputs.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
+        <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border">
           {taskOutputs.slice(0, 3).map((out) => (
             <span
               key={out.id}
-              className="text-xs bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded flex items-center gap-1"
+              className="text-xs text-muted-foreground flex items-center gap-1"
             >
-              <span>📄</span>
+              <FileText className="w-3 h-3 shrink-0" />
               <span className="max-w-[80px] truncate">{out.fileName}</span>
             </span>
           ))}
           {taskOutputs.length > 3 && (
-            <span className="text-xs text-slate-500">+{taskOutputs.length - 3} more</span>
+            <span className="text-xs text-muted-foreground/60">+{taskOutputs.length - 3}</span>
           )}
         </div>
       )}

@@ -1,43 +1,48 @@
+import { LayoutGrid, Zap, BookOpen, Brain, GitBranch, FolderOpen, Settings } from 'lucide-react'
 import { useUiStore } from '../store/uiStore'
+import { cn } from '../lib/utils'
 
 type NavItem = {
   id: 'board' | 'skills' | 'docs' | 'memory' | 'git' | 'outputs' | 'settings'
   label: string
-  icon: string
+  icon: React.ComponentType<{ className?: string }>
 }
 
 const navItems: NavItem[] = [
-  { id: 'board', label: 'Board', icon: '⊞' },
-  { id: 'skills', label: 'Skills', icon: '⚡' },
-  { id: 'docs', label: 'Docs', icon: '📄' },
-  { id: 'memory', label: 'Memory', icon: '🧠' },
-  { id: 'git', label: 'Git', icon: '⑂' },
-  { id: 'outputs', label: 'Outputs', icon: '📁' }
+  { id: 'board', label: 'Board', icon: LayoutGrid },
+  { id: 'skills', label: 'Skills', icon: Zap },
+  { id: 'docs', label: 'Docs', icon: BookOpen },
+  { id: 'memory', label: 'Memory', icon: Brain },
+  { id: 'git', label: 'Git', icon: GitBranch },
+  { id: 'outputs', label: 'Outputs', icon: FolderOpen }
 ]
 
 export default function Sidebar() {
   const { currentPage, setPage } = useUiStore()
 
+  const NavButton = ({ item }: { item: NavItem }) => {
+    const Icon = item.icon
+    const active = currentPage === item.id
+    return (
+      <button
+        onClick={() => setPage(item.id)}
+        title={item.label}
+        className={cn(
+          'no-drag w-9 h-9 rounded-md flex items-center justify-center transition-colors cursor-pointer',
+          active
+            ? 'bg-primary/15 text-primary'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        )}
+      >
+        <Icon className="w-4 h-4" />
+      </button>
+    )
+  }
+
   return (
-    <aside className="w-14 flex flex-col items-center bg-slate-950 border-r border-slate-800 py-2 pt-10 gap-1 shrink-0">
+    <aside className="w-13 flex flex-col items-center bg-[hsl(0,0%,5%)] border-r border-border py-2 pt-10 gap-1 shrink-0" style={{ width: '52px' }}>
       {navItems.map((item) => (
-        <button
-          key={item.id}
-          onClick={() => setPage(item.id)}
-          title={item.label}
-          className={`
-            no-drag w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs gap-0.5
-            transition-colors cursor-pointer
-            ${
-              currentPage === item.id
-                ? 'bg-violet-600 text-white'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }
-          `}
-        >
-          <span className="text-base leading-none">{item.icon}</span>
-          <span className="text-[9px] leading-none">{item.label}</span>
-        </button>
+        <NavButton key={item.id} item={item} />
       ))}
 
       <div className="flex-1" />
@@ -45,18 +50,14 @@ export default function Sidebar() {
       <button
         onClick={() => setPage('settings')}
         title="Settings"
-        className={`
-          no-drag w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs gap-0.5
-          transition-colors cursor-pointer
-          ${
-            currentPage === 'settings'
-              ? 'bg-violet-600 text-white'
-              : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-          }
-        `}
+        className={cn(
+          'no-drag w-9 h-9 rounded-md flex items-center justify-center transition-colors cursor-pointer',
+          currentPage === 'settings'
+            ? 'bg-primary/15 text-primary'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        )}
       >
-        <span className="text-base leading-none">⚙</span>
-        <span className="text-[9px] leading-none">Settings</span>
+        <Settings className="w-4 h-4" />
       </button>
     </aside>
   )

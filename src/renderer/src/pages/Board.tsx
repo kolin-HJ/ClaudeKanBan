@@ -1,9 +1,11 @@
+import { LayoutGrid, Plus } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useUiStore } from '../store/uiStore'
 import KanbanBoard from '../components/KanbanBoard'
 import TaskDetailPanel from '../components/TaskDetailPanel'
 import ScheduledTasksSection from '../components/ScheduledTasksSection'
 import RecentOutputsSection from '../components/RecentOutputsSection'
+import { Button } from '../components/ui/button'
 
 export default function Board() {
   const { activeProject } = useProjectStore()
@@ -12,15 +14,16 @@ export default function Board() {
 
   if (!project) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center">
-        <div className="text-4xl mb-4">◆</div>
-        <h2 className="text-xl font-semibold text-slate-200 mb-2">Welcome to ClaudeKanBan</h2>
-        <p className="text-slate-500 mb-6 max-w-sm">
-          Add a project to start managing your Claude Code sessions as goals on a Kanban board.
-        </p>
-        <p className="text-slate-600 text-sm">
-          Click <span className="text-slate-400">+ Add Project</span> in the tab bar above.
-        </p>
+      <div className="flex flex-col items-center justify-center h-full text-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
+          <LayoutGrid className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground mb-1">No project selected</h2>
+          <p className="text-xs text-muted-foreground max-w-xs">
+            Add a project using the tab bar above to start managing Claude sessions.
+          </p>
+        </div>
       </div>
     )
   }
@@ -30,16 +33,16 @@ export default function Board() {
       {/* Main board area */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-800">
-          <h1 className="text-sm font-semibold text-slate-200 truncate">{project.name}</h1>
-          <span className="text-xs text-slate-600">{project.path}</span>
+        <div className="flex items-center gap-3 px-4 h-10 border-b border-border shrink-0">
+          <span className="text-sm font-medium text-foreground">{project.name}</span>
+          <span className="text-xs text-muted-foreground/60 font-mono truncate hidden md:block">
+            {project.path}
+          </span>
           <div className="flex-1" />
-          <button
-            onClick={openCreateTask}
-            className="px-3 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors font-medium"
-          >
-            + New Goal
-          </button>
+          <Button size="sm" onClick={openCreateTask}>
+            <Plus className="w-3.5 h-3.5" />
+            New Goal
+          </Button>
         </div>
 
         {/* Kanban columns */}
@@ -48,7 +51,7 @@ export default function Board() {
         </div>
 
         {/* Bottom sections */}
-        <div className="border-t border-slate-800 px-4 py-3 max-h-[300px] overflow-y-auto bg-slate-900/50">
+        <div className="border-t border-border px-4 py-3 max-h-[260px] overflow-y-auto bg-background/50">
           <ScheduledTasksSection />
           <RecentOutputsSection />
         </div>

@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { ArrowLeft, Check, Trash2, Square, SendHorizontal, Play, FileText } from 'lucide-react'
 import { useTaskStore } from '../store/taskStore'
 import { useUiStore } from '../store/uiStore'
 import { useProjectStore } from '../store/projectStore'
 import { Message, Output } from '../../../shared/types'
+import { Button } from './ui/button'
+import { Textarea } from './ui/textarea'
+import { cn } from '../lib/utils'
 
 export default function TaskDetailPanel() {
   const { selectedTaskId, selectTask, openOutputPreview } = useUiStore()
@@ -25,7 +29,6 @@ export default function TaskDetailPanel() {
     }
   }, [selectedTaskId])
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [taskMessages.length])
@@ -53,97 +56,118 @@ export default function TaskDetailPanel() {
   const isRunning = sessionStatus === 'running' || sessionStatus === 'spawning'
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 border-l border-slate-800 w-[480px] shrink-0">
+    <div className="flex flex-col h-full bg-background border-l border-border w-[460px] shrink-0">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/90">
+      <div className="flex items-center gap-2 px-3 h-10 border-b border-border shrink-0">
         <button
           onClick={() => selectTask(null)}
-          className="text-slate-400 hover:text-slate-200 transition-colors"
+          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-accent"
         >
-          ←
+          <ArrowLeft className="w-3.5 h-3.5" />
         </button>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-slate-100 text-sm truncate">{task.title}</div>
-          {task.description && (
-            <div className="text-xs text-slate-500 truncate">{task.description}</div>
-          )}
+          <div className="font-medium text-foreground text-sm truncate">{task.title}</div>
         </div>
         <div className="flex items-center gap-1">
           {task.status !== 'done' && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => updateTaskStatus(task.id, 'done')}
-              className="text-xs px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded transition-colors"
+              className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-400/10 h-7 px-2"
             >
-              Done ✓
-            </button>
+              <Check className="w-3.5 h-3.5" />
+              Done
+            </Button>
           )}
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => {
               deleteTask(task.id)
               selectTask(null)
             }}
-            className="text-xs px-2 py-1 bg-slate-700 hover:bg-red-700 text-slate-300 hover:text-white rounded transition-colors"
+            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
           >
-            Delete
-          </button>
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
         </div>
       </div>
+
+      {/* Description */}
+      {task.description && (
+        <div className="px-4 py-2 border-b border-border bg-muted/30">
+          <p className="text-xs text-muted-foreground leading-relaxed">{task.description}</p>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {taskMessages.length === 0 && (
-          <div className="text-center text-slate-600 text-sm mt-8">
-            <p className="mb-2">No messages yet.</p>
-            {!isRunning && (
-              <button
-                onClick={handleSpawn}
-                className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm transition-colors"
-              >
-                Start Claude Session →
-              </button>
-            )}
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
+              <Play className="w-4 h-4 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground mb-3">No messages yet</p>
+              {!isRunning && (
+                <Button size="sm" onClick={handleSpawn}>
+                  Start Session
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
         {taskMessages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+            className={cn(
+              'flex gap-2',
+              msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'
+            )}
           >
             <div
-              className={`
-                max-w-[85%] rounded-lg px-3 py-2 text-sm
-                ${
-                  msg.role === 'user'
-                    ? 'bg-violet-700 text-white'
-                    : 'bg-slate-800 text-slate-200 border border-slate-700'
-                }
-              `}
+              className={cn(
+                'max-w-[85%] rounded-lg px-3 py-2 text-sm',
+                msg.role === 'user'
+                  ? 'bg-primary text-primary-foreground'
+                  : msg.role === 'system'
+                    ? 'bg-destructive/10 text-destructive border border-destructive/20 font-mono text-xs'
+                    : 'bg-card text-foreground border border-border'
+              )}
             >
-              <div className="prose prose-invert prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-              </div>
+              {msg.role === 'system' ? (
+                <pre className="whitespace-pre-wrap break-all text-xs">{msg.content}</pre>
+              ) : (
+                <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                </div>
+              )}
               <div
-                className={`text-xs mt-1 ${msg.role === 'user' ? 'text-violet-300' : 'text-slate-500'}`}
+                className={cn(
+                  'text-xs mt-1 opacity-50',
+                  msg.role === 'user' ? 'text-right' : ''
+                )}
               >
-                {new Date(msg.timestamp).toLocaleTimeString()}
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
           </div>
         ))}
 
         {isRunning && (
-          <div className="flex items-center gap-2 text-slate-500 text-sm">
+          <div className="flex items-center gap-2 text-muted-foreground text-xs pl-1">
             <span className="flex gap-0.5">
               {[0, 1, 2].map((i) => (
                 <span
                   key={i}
-                  className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-bounce"
+                  className="w-1 h-1 rounded-full bg-amber-400 animate-bounce"
                   style={{ animationDelay: `${i * 0.15}s` }}
                 />
               ))}
             </span>
-            <span>Claude is working…</span>
+            <span>Claude is working</span>
           </div>
         )}
 
@@ -152,8 +176,8 @@ export default function TaskDetailPanel() {
 
       {/* Outputs */}
       {taskOutputs.length > 0 && (
-        <div className="border-t border-slate-800 px-4 py-2">
-          <div className="text-xs text-slate-500 mb-1 font-medium uppercase tracking-wide">
+        <div className="border-t border-border px-4 py-2">
+          <div className="text-xs text-muted-foreground mb-1.5 font-medium uppercase tracking-wider">
             Outputs
           </div>
           <div className="flex flex-wrap gap-1">
@@ -161,9 +185,9 @@ export default function TaskDetailPanel() {
               <button
                 key={out.id}
                 onClick={() => openOutputPreview(out.filePath)}
-                className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded transition-colors"
+                className="flex items-center gap-1 text-xs bg-secondary hover:bg-accent text-secondary-foreground px-2 py-1 rounded transition-colors"
               >
-                <span>📄</span>
+                <FileText className="w-3 h-3 shrink-0" />
                 <span className="max-w-[100px] truncate">{out.fileName}</span>
               </button>
             ))}
@@ -172,48 +196,49 @@ export default function TaskDetailPanel() {
       )}
 
       {/* Reply box */}
-      <div className="border-t border-slate-800 p-3 bg-slate-900/80">
+      <div className="border-t border-border p-3">
         {isRunning ? (
           <div className="flex items-center justify-between">
-            <span className="text-xs text-amber-400 flex items-center gap-1">
+            <span className="text-xs text-amber-400 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              Session running…
+              Session running
             </span>
-            <button
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={() => terminateSession(task.id)}
-              className="text-xs px-2 py-1 bg-slate-700 hover:bg-red-700 text-slate-300 hover:text-white rounded transition-colors"
             >
+              <Square className="w-3 h-3" />
               Stop
-            </button>
+            </Button>
           </div>
         ) : (
           <>
-            <textarea
+            <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Type a message… (Ctrl+Enter to send)"
+              placeholder="Message Claude... (Ctrl+Enter to send)"
               rows={3}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors"
+              className="mb-2 text-sm"
             />
-            <div className="flex items-center justify-between mt-2">
+            <div className="flex items-center justify-between">
               {taskMessages.length === 0 ? (
-                <button
-                  onClick={handleSpawn}
-                  className="text-xs px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
-                >
-                  Start Claude Session →
-                </button>
+                <Button variant="secondary" size="sm" onClick={handleSpawn}>
+                  <Play className="w-3 h-3" />
+                  Start Session
+                </Button>
               ) : (
                 <span />
               )}
-              <button
+              <Button
+                size="sm"
                 onClick={handleSend}
                 disabled={!input.trim()}
-                className="text-xs px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
               >
-                Send →
-              </button>
+                <SendHorizontal className="w-3.5 h-3.5" />
+                Send
+              </Button>
             </div>
           </>
         )}

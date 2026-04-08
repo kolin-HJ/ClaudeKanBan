@@ -1,7 +1,7 @@
 export type TaskStatus = 'your-turn' | 'in-progress' | 'done'
 export type TaskDepth = 'quick' | 'campaign' | 'deep-build'
 export type TaskPermission = 'default' | 'full-auto'
-export type MessageRole = 'user' | 'claude'
+export type MessageRole = 'user' | 'claude' | 'system'
 export type MemoryType = 'project_context' | 'task_learning' | 'feedback' | 'pattern' | 'blocker'
 export type MemoryCategory =
   | 'architecture'
@@ -11,6 +11,10 @@ export type MemoryCategory =
   | 'brand_voice'
   | 'workflow'
   | 'dependency'
+// 0=Identity (always injected, ~50 tokens), 1=Critical (always injected, ~120 tokens),
+// 2=Context (on-demand by room/topic), 3=Archive (deep FTS search only)
+export type MemoryLayer = 0 | 1 | 2 | 3
+export type MemoryLinkRelationship = 'related' | 'contradicts' | 'extends' | 'supersedes'
 export type SessionStatus = 'spawning' | 'running' | 'waiting-input' | 'completed' | 'error'
 
 export interface Project {
@@ -55,12 +59,28 @@ export interface Memory {
   projectId: string
   type: MemoryType
   category?: MemoryCategory
+  // Room = topic domain within the project (e.g. "auth", "api", "database")
+  room?: string
+  // Layer controls when this memory is injected into Claude prompts
+  layer: MemoryLayer
+  // content = the concise, actionable memory (what Claude needs to know)
   content: string
+  // verbatim = raw original text this was extracted from (store everything)
+  verbatim?: string
   source: 'user_input' | 'claude_note' | 'inferred'
   taskId?: string
   relevanceScore: number
+  referenceCount: number
   createdAt: string
   lastReferenced: string
+}
+
+export interface MemoryLink {
+  id: string
+  sourceId: string
+  targetId: string
+  relationship: MemoryLinkRelationship
+  createdAt: string
 }
 
 export interface GitStatus {
@@ -155,6 +175,11 @@ export const IPC = {
   MEMORY_SEARCH: 'memory:search',
   MEMORY_CONTEXT_BLOCK: 'memory:contextBlock',
   MEMORY_CAPTURE_TASK: 'memory:captureFromTask',
+  MEMORY_ROOMS: 'memory:rooms',
+  MEMORY_LINKS_LIST: 'memory:linksList',
+  MEMORY_LINKS_CREATE: 'memory:linksCreate',
+  MEMORY_LINKS_DELETE: 'memory:linksDelete',
+  MEMORY_EXPORT: 'memory:export',
 
   SKILLS_LIST: 'skills:list',
   SKILLS_READ: 'skills:read',

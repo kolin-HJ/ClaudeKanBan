@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { FileText } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useUiStore } from '../store/uiStore'
+import { Button } from './ui/button'
 
 interface RecentOutput {
   id: string
@@ -35,27 +37,29 @@ export default function RecentOutputsSection() {
 
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 px-1">
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
         Recent Outputs
       </h3>
       <div className="space-y-1">
         {outputs.map((out) => (
           <div
             key={out.id}
-            className="flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2"
+            className="flex items-center gap-2.5 bg-card border border-border rounded-md px-3 py-2"
           >
-            <span className="text-base">📄</span>
+            <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm text-slate-200 truncate">{out.fileName}</div>
-              <div className="text-xs text-slate-500 truncate">{out.taskTitle}</div>
+              <div className="text-xs font-medium text-foreground truncate">{out.fileName}</div>
+              <div className="text-xs text-muted-foreground/60 truncate">{out.taskTitle}</div>
             </div>
-            <div className="text-xs text-slate-500 shrink-0">{timeAgo(out.createdAt)}</div>
-            <button
+            <span className="text-xs text-muted-foreground/40 shrink-0">{timeAgo(out.createdAt)}</span>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => openOutputPreview(out.filePath)}
-              className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors shrink-0"
+              className="h-6 px-2 text-xs shrink-0"
             >
               Preview
-            </button>
+            </Button>
           </div>
         ))}
       </div>

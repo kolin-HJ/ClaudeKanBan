@@ -38,7 +38,8 @@ function runMigrations(): void {
   const appliedSet = new Set(applied.map((r) => r.version))
 
   const migrations: { version: number; sql: string }[] = [
-    { version: 1, sql: migration001 }
+    { version: 1, sql: migration001 },
+    { version: 2, sql: migration002 }
   ]
 
   for (const migration of migrations) {
