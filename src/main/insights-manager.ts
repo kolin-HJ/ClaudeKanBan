@@ -2,12 +2,18 @@ import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
 import { SessionInsight } from '../shared/types'
 import { MemoryManager } from './memory-manager'
+import { KnowledgeGraph } from './knowledge-graph'
+import { DiaryManager } from './diary-manager'
 
 export class InsightsManager {
   private memoryManager: MemoryManager
+  private knowledgeGraph: KnowledgeGraph
+  private diaryManager: DiaryManager
 
-  constructor(memoryManager: MemoryManager) {
+  constructor(memoryManager: MemoryManager, kg?: KnowledgeGraph, diary?: DiaryManager) {
     this.memoryManager = memoryManager
+    this.knowledgeGraph = kg ?? new KnowledgeGraph()
+    this.diaryManager = diary ?? new DiaryManager()
   }
 
   generateInsight(sessionId: string): SessionInsight | null {
@@ -75,18 +81,66 @@ export class InsightsManager {
         summary
       )
 
-    // Auto-capture learnings into memory system
-    for (const learning of learnings) {
-      try {
-        this.memoryManager.create(session.project_id, {
-          type: 'task_learning',
-          content: learning,
-          source: 'inferred',
-          taskId: session.task_id
-        })
-      } catch {
-        // ignore duplicates
+    // Auto-capture learnings into palace memory system (with hall classification)
+    // This uses the enhanced captureFromTask which classifies into halls
+    try {
+      this.memoryManager.captureFromTask(session.task_id)
+    } catch {
+      // fallback: create simple learnings
+      for (const learning of learnings) {
+        try {
+          this.memoryManager.create(session.project_id, {
+            type: 'task_learning',
+            content: learning,
+            source: 'inferred',
+            taskId: session.task_id
+          })
+        } catch {
+          // ignore
+        }
       }
+    }
+
+    // Auto-extract knowledge graph triples from Claude messages
+    try {
+      const messages = getDb()
+        .prepare(
+          `SELECT content FROM messages WHERE task_id = ? AND role = 'claude' ORDER BY timestamp`
+        )
+        .all(session.task_id) as { content: string }[]
+      for (const msg of messages.slice(-5)) {
+        const extraction = this.knowledgeGraph.extractFromContent(msg.content)
+        this.knowledgeGraph.processExtraction(extraction)
+      }
+    } catch {
+      // KG extraction failure is non-critical
+    }
+
+    // Write agent diary entry summarizing the session
+    try {
+      const task = getDb()
+        .prepare('SELECT title FROM tasks WHERE id = ?')
+        .get(session.task_id) as any
+      this.diaryManager.writeSessionSummary({
+        sessionId,
+        projectId: session.project_id,
+        taskTitle: task?.title ?? 'Unknown task',
+        durationSecs: session.duration_secs,
+        inputTokens: session.input_tokens,
+        outputTokens: session.output_tokens,
+        costUsd: session.total_cost_usd,
+        toolsUsed: tools.map((t: any) => t.tool_name),
+        filesCreated: filesCreated,
+        filesRead: filesRead,
+        decisions: learnings.filter((l: string) =>
+          /\b(?:decided|chose|went with|switched|using)\b/i.test(l)
+        ),
+        problems: learnings.filter((l: string) =>
+          /\b(?:issue|problem|bug|error|failed|broken)\b/i.test(l)
+        )
+      })
+    } catch {
+      // Diary failure is non-critical
     }
 
     // Sync memories file

@@ -46,6 +46,29 @@ ClaudeKanBan wraps Claude Code sessions in a goal-driven Kanban board with full 
 - **Memory types**: Project Context, Task Learning, Feedback, Pattern, Blocker
 - **Categories**: Architecture, Convention, Debugging, Performance, Brand Voice, Workflow, Dependency
 
+### MemPalace Memory Architecture
+Inspired by [mempalace](https://github.com/milla-jovovich/mempalace) (96.6% recall on LongMemEval), the memory system uses a spatial hierarchy for dramatically better retrieval:
+
+- **Wings** -- each project is a wing (container). Cross-project patterns shared via tunnels
+- **Rooms** -- topic areas auto-detected from folder structure (70+ patterns: frontend, backend, auth, database, testing, devops, etc.)
+- **Halls** -- 5 memory type corridors per room:
+  - `hall_facts` -- decisions, choices locked in
+  - `hall_events` -- sessions, milestones, deployments
+  - `hall_discoveries` -- breakthroughs, root causes found
+  - `hall_preferences` -- conventions, patterns, coding style
+  - `hall_advice` -- recommendations, best practices
+- **4-Layer Memory Stack** for context injection:
+  - **L0 Identity** (~50 tokens) -- always loaded, editable per project
+  - **L1 Essential Story** (~120 tokens) -- top 15 memories by importance, grouped by room
+  - **L2 On-Demand** (~200-500 tokens) -- task-filtered by auto-detected room
+  - **L3 Deep Search** -- FTS5 full-text fallback
+- **Knowledge Graph** -- entity-relationship triples with temporal validity (valid_from/valid_to). Auto-extracts entities and relationships from Claude sessions ("X uses Y", "switched from X to Y")
+- **Agent Diary** -- per-session journal auto-written on completion: decisions, problems, files, tokens
+- **Palace Graph** -- cross-project tunnel detection (same room in multiple projects enables knowledge transfer)
+- **Duplicate Detection** -- Jaccard similarity check before storing (>0.7 = boost existing instead of creating duplicate)
+- **Auto-classification** -- every memory gets wing/room/hall automatically from content analysis
+- **Conversation Mining** -- all Claude messages mined with hall-aware classification (not just last 3)
+
 ### Per-Project Plugin/Skill System
 - **Skill files** (`.md`) managed per-project with toggle activation
 - **Per-project configuration** -- enable/disable skills per project with priority ordering

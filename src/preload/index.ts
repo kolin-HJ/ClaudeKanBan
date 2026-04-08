@@ -143,6 +143,53 @@ const api = {
       ipcRenderer.invoke(IPC.INSIGHTS_PROMOTE_LEARNING, projectId, learning)
   },
 
+  // ─── Palace (MemPalace Architecture) ────────────────────────────────────────
+  palace: {
+    identityGet: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_IDENTITY_GET, projectId),
+    identitySet: (projectId: string, content: string) =>
+      ipcRenderer.invoke(IPC.PALACE_IDENTITY_SET, projectId, content),
+    rooms: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_ROOMS, projectId),
+    detectRooms: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_DETECT_ROOMS, projectId),
+    stats: (projectId: string) => ipcRenderer.invoke(IPC.PALACE_STATS, projectId),
+    graph: (projectId?: string) => ipcRenderer.invoke(IPC.PALACE_GRAPH, projectId),
+    traverse: (startRoom: string, maxHops?: number) =>
+      ipcRenderer.invoke(IPC.PALACE_TRAVERSE, startRoom, maxHops),
+    tunnels: (wingA?: string, wingB?: string) =>
+      ipcRenderer.invoke(IPC.PALACE_TUNNELS, wingA, wingB),
+    search: (projectId: string, query: string, opts?: any) =>
+      ipcRenderer.invoke(IPC.PALACE_SEARCH, projectId, query, opts),
+    duplicateCheck: (projectId: string, content: string, wing?: string, room?: string) =>
+      ipcRenderer.invoke(IPC.PALACE_DUPLICATE_CHECK, projectId, content, wing, room)
+  },
+
+  // ─── Knowledge Graph ───────────────────────────────────────────────────────
+  kg: {
+    addEntity: (name: string, entityType: string, properties?: any) =>
+      ipcRenderer.invoke(IPC.KG_ADD_ENTITY, name, entityType, properties),
+    listEntities: (entityType?: string) =>
+      ipcRenderer.invoke(IPC.KG_LIST_ENTITIES, entityType),
+    addTriple: (subject: string, predicate: string, object: string, opts?: any) =>
+      ipcRenderer.invoke(IPC.KG_ADD_TRIPLE, subject, predicate, object, opts),
+    invalidate: (subject: string, predicate: string, object: string, ended?: string) =>
+      ipcRenderer.invoke(IPC.KG_INVALIDATE, subject, predicate, object, ended),
+    queryEntity: (name: string, opts?: any) =>
+      ipcRenderer.invoke(IPC.KG_QUERY_ENTITY, name, opts),
+    queryRelationship: (predicate: string, asOf?: string) =>
+      ipcRenderer.invoke(IPC.KG_QUERY_RELATIONSHIP, predicate, asOf),
+    timeline: (entityName: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.KG_TIMELINE, entityName, limit),
+    stats: () => ipcRenderer.invoke(IPC.KG_STATS)
+  },
+
+  // ─── Agent Diary ───────────────────────────────────────────────────────────
+  diary: {
+    write: (opts: any) => ipcRenderer.invoke(IPC.DIARY_WRITE, opts),
+    read: (projectId: string, agentName?: string, lastN?: number) =>
+      ipcRenderer.invoke(IPC.DIARY_READ, projectId, agentName, lastN),
+    readByTopic: (projectId: string, topic: string, lastN?: number) =>
+      ipcRenderer.invoke(IPC.DIARY_READ_BY_TOPIC, projectId, topic, lastN)
+  },
+
   // ─── Asana ─────────────────────────────────────────────────────────────────
   asana: {
     verify: () => ipcRenderer.invoke(IPC.ASANA_VERIFY),

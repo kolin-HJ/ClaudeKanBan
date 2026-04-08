@@ -40,7 +40,8 @@ function runMigrations(): void {
   const migrations: { version: number; sql: string }[] = [
     { version: 1, sql: migration001 },
     { version: 2, sql: migration002 },
-    { version: 3, sql: migration003 }
+    { version: 3, sql: migration003 },
+    { version: 4, sql: migration004 }
   ]
 
   for (const migration of migrations) {
@@ -258,4 +259,67 @@ const migration003 = `
   -- Link local tasks to Asana tasks
   ALTER TABLE tasks ADD COLUMN asana_gid TEXT;
   ALTER TABLE tasks ADD COLUMN asana_permalink TEXT;
+`
+
+const migration004 = `
+  -- MemPalace: Spatial memory hierarchy (wings/rooms/halls/drawers)
+  -- Adds palace columns to existing memories table
+  ALTER TABLE memories ADD COLUMN wing TEXT;
+  ALTER TABLE memories ADD COLUMN room TEXT;
+  ALTER TABLE memories ADD COLUMN hall TEXT CHECK(hall IS NULL OR hall IN (
+    'hall_facts','hall_events','hall_discoveries','hall_preferences','hall_advice'
+  ));
+  ALTER TABLE memories ADD COLUMN importance REAL DEFAULT 1.0;
+  ALTER TABLE memories ADD COLUMN added_by TEXT DEFAULT 'user';
+
+  CREATE INDEX IF NOT EXISTS idx_memories_wing ON memories(wing, room);
+  CREATE INDEX IF NOT EXISTS idx_memories_hall ON memories(hall);
+
+  -- Knowledge Graph: Entity-Relationship triples with temporal validity
+  CREATE TABLE IF NOT EXISTS kg_entities (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    entity_type   TEXT NOT NULL CHECK(entity_type IN ('person','project','concept','technology','file','service')),
+    properties    TEXT, -- JSON
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(name, entity_type)
+  );
+
+  CREATE TABLE IF NOT EXISTS kg_triples (
+    id              TEXT PRIMARY KEY,
+    subject         TEXT NOT NULL,
+    predicate       TEXT NOT NULL,
+    object          TEXT NOT NULL,
+    valid_from      TEXT DEFAULT (datetime('now')),
+    valid_to        TEXT, -- NULL = still current
+    confidence      REAL DEFAULT 1.0,
+    source_memory_id TEXT REFERENCES memories(id) ON DELETE SET NULL,
+    source_file     TEXT,
+    extracted_at    TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_kg_subject ON kg_triples(subject, valid_to);
+  CREATE INDEX IF NOT EXISTS idx_kg_object ON kg_triples(object, valid_to);
+  CREATE INDEX IF NOT EXISTS idx_kg_predicate ON kg_triples(predicate);
+
+  -- Agent Diary: Per-agent session journals
+  CREATE TABLE IF NOT EXISTS agent_diary (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    agent_name  TEXT NOT NULL DEFAULT 'claude',
+    topic       TEXT DEFAULT 'general',
+    content     TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_diary_project ON agent_diary(project_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_diary_agent ON agent_diary(agent_name, created_at);
+
+  -- Identity: Per-project identity text (L0 layer)
+  CREATE TABLE IF NOT EXISTS palace_identity (
+    project_id  TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    content     TEXT NOT NULL DEFAULT '',
+    updated_at  TEXT DEFAULT (datetime('now'))
+  );
 `

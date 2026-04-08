@@ -64,6 +64,12 @@ export interface Memory {
   relevanceScore: number
   createdAt: string
   lastReferenced: string
+  // Palace fields
+  wing?: string
+  room?: string
+  hall?: string
+  importance?: number
+  addedBy?: string
 }
 
 export interface GitStatus {
@@ -324,6 +330,33 @@ export const IPC = {
   // Security
   SECURITY_SCORE: 'security:score',
   SECURITY_PROJECT_SCORES: 'security:projectScores',
+
+  // Palace (mempalace architecture)
+  PALACE_IDENTITY_GET: 'palace:identityGet',
+  PALACE_IDENTITY_SET: 'palace:identitySet',
+  PALACE_ROOMS: 'palace:rooms',
+  PALACE_DETECT_ROOMS: 'palace:detectRooms',
+  PALACE_STATS: 'palace:stats',
+  PALACE_GRAPH: 'palace:graph',
+  PALACE_TRAVERSE: 'palace:traverse',
+  PALACE_TUNNELS: 'palace:tunnels',
+  PALACE_SEARCH: 'palace:search',
+  PALACE_DUPLICATE_CHECK: 'palace:duplicateCheck',
+
+  // Knowledge Graph
+  KG_ADD_ENTITY: 'kg:addEntity',
+  KG_LIST_ENTITIES: 'kg:listEntities',
+  KG_ADD_TRIPLE: 'kg:addTriple',
+  KG_INVALIDATE: 'kg:invalidate',
+  KG_QUERY_ENTITY: 'kg:queryEntity',
+  KG_QUERY_RELATIONSHIP: 'kg:queryRelationship',
+  KG_TIMELINE: 'kg:timeline',
+  KG_STATS: 'kg:stats',
+
+  // Agent Diary
+  DIARY_WRITE: 'diary:write',
+  DIARY_READ: 'diary:read',
+  DIARY_READ_BY_TOPIC: 'diary:readByTopic',
 
   // Asana integration
   ASANA_VERIFY: 'asana:verify',

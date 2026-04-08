@@ -93,6 +93,33 @@ interface ElectronAPI {
     get(id: string): Promise<any>
     promoteLearning(projectId: string, learning: string): Promise<void>
   }
+  palace: {
+    identityGet(projectId: string): Promise<string>
+    identitySet(projectId: string, content: string): Promise<void>
+    rooms(projectId: string): Promise<Record<string, number>>
+    detectRooms(projectId: string): Promise<string[]>
+    stats(projectId: string): Promise<any>
+    graph(projectId?: string): Promise<any>
+    traverse(startRoom: string, maxHops?: number): Promise<any[]>
+    tunnels(wingA?: string, wingB?: string): Promise<any[]>
+    search(projectId: string, query: string, opts?: any): Promise<any[]>
+    duplicateCheck(projectId: string, content: string, wing?: string, room?: string): Promise<any>
+  }
+  kg: {
+    addEntity(name: string, entityType: string, properties?: any): Promise<string>
+    listEntities(entityType?: string): Promise<any[]>
+    addTriple(subject: string, predicate: string, object: string, opts?: any): Promise<string>
+    invalidate(subject: string, predicate: string, object: string, ended?: string): Promise<void>
+    queryEntity(name: string, opts?: any): Promise<any[]>
+    queryRelationship(predicate: string, asOf?: string): Promise<any[]>
+    timeline(entityName: string, limit?: number): Promise<any[]>
+    stats(): Promise<any>
+  }
+  diary: {
+    write(opts: any): Promise<string>
+    read(projectId: string, agentName?: string, lastN?: number): Promise<any[]>
+    readByTopic(projectId: string, topic: string, lastN?: number): Promise<any[]>
+  }
   asana: {
     verify(): Promise<{ ok: boolean; name?: string; email?: string; error?: string }>
     setToken(token: string): Promise<void>

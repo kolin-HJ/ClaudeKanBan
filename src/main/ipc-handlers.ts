@@ -9,14 +9,20 @@ import { MemoryManager } from './memory-manager'
 import { SkillsManager } from './skills-manager'
 import { InsightsManager } from './insights-manager'
 import { AsanaManager } from './asana-manager'
+import { KnowledgeGraph } from './knowledge-graph'
+import { DiaryManager } from './diary-manager'
+import * as palaceGraph from './palace-graph'
+import { detectRooms } from './room-detector'
 
 const claudeManager = new ClaudeManager()
 const gitManager = new GitManager()
 const githubManager = new GithubManager()
 const memoryManager = new MemoryManager()
 const skillsManager = new SkillsManager()
-const insightsManager = new InsightsManager(memoryManager)
+const insightsManager = new InsightsManager(memoryManager, knowledgeGraph, diaryManager)
 const asanaManager = new AsanaManager()
+const knowledgeGraph = new KnowledgeGraph()
+const diaryManager = new DiaryManager()
 
 // Wire up insight generation callback so ClaudeManager triggers it on session end
 claudeManager.setInsightCallback((sessionId: string) => {
@@ -39,6 +45,9 @@ export function registerIpcHandlers(): void {
   registerScheduledHandlers()
   registerUsageHandlers()
   registerInsightsHandlers()
+  registerPalaceHandlers()
+  registerKnowledgeGraphHandlers()
+  registerDiaryHandlers()
   registerCheckpointHandlers()
   registerSecurityHandlers()
   registerAsanaHandlers()
@@ -808,6 +817,119 @@ function registerInsightsHandlers(): void {
   ipcMain.handle(IPC.INSIGHTS_PROMOTE_LEARNING, (_e, projectId: string, learning: string) => {
     return insightsManager.promoteLearning(projectId, learning)
   })
+}
+
+// ─── Palace (MemPalace Architecture) ──────────────────────────────────────────
+
+function registerPalaceHandlers(): void {
+  ipcMain.handle(IPC.PALACE_IDENTITY_GET, (_e, projectId: string) => {
+    return memoryManager.getIdentity(projectId)
+  })
+
+  ipcMain.handle(IPC.PALACE_IDENTITY_SET, (_e, projectId: string, content: string) => {
+    memoryManager.setIdentity(projectId, content)
+  })
+
+  ipcMain.handle(IPC.PALACE_ROOMS, (_e, projectId: string) => {
+    return memoryManager.palaceStats(projectId).byRoom
+  })
+
+  ipcMain.handle(IPC.PALACE_DETECT_ROOMS, (_e, projectId: string) => {
+    const project = getDb().prepare('SELECT path FROM projects WHERE id = ?').get(projectId) as any
+    if (!project) return []
+    return detectRooms(project.path)
+  })
+
+  ipcMain.handle(IPC.PALACE_STATS, (_e, projectId: string) => {
+    return memoryManager.palaceStats(projectId)
+  })
+
+  ipcMain.handle(IPC.PALACE_GRAPH, (_e, projectId?: string) => {
+    return palaceGraph.buildGraph(projectId)
+  })
+
+  ipcMain.handle(IPC.PALACE_TRAVERSE, (_e, startRoom: string, maxHops?: number) => {
+    return palaceGraph.traverse(startRoom, maxHops)
+  })
+
+  ipcMain.handle(IPC.PALACE_TUNNELS, (_e, wingA?: string, wingB?: string) => {
+    return palaceGraph.findTunnels(wingA, wingB)
+  })
+
+  ipcMain.handle(
+    IPC.PALACE_SEARCH,
+    (_e, projectId: string, query: string, opts?: { wing?: string; room?: string; hall?: string }) => {
+      return memoryManager.searchPalace(projectId, query, opts)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.PALACE_DUPLICATE_CHECK,
+    (_e, projectId: string, content: string, wing?: string, room?: string) => {
+      return memoryManager.checkDuplicate(projectId, content, wing, room)
+    }
+  )
+}
+
+// ─── Knowledge Graph ──────────────────────────────────────────────────────────
+
+function registerKnowledgeGraphHandlers(): void {
+  ipcMain.handle(IPC.KG_ADD_ENTITY, (_e, name: string, entityType: string, properties?: any) => {
+    return knowledgeGraph.addEntity(name, entityType, properties)
+  })
+
+  ipcMain.handle(IPC.KG_LIST_ENTITIES, (_e, entityType?: string) => {
+    return knowledgeGraph.listEntities(entityType)
+  })
+
+  ipcMain.handle(
+    IPC.KG_ADD_TRIPLE,
+    (_e, subject: string, predicate: string, object: string, opts?: any) => {
+      return knowledgeGraph.addTriple(subject, predicate, object, opts)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.KG_INVALIDATE,
+    (_e, subject: string, predicate: string, object: string, ended?: string) => {
+      knowledgeGraph.invalidate(subject, predicate, object, ended)
+    }
+  )
+
+  ipcMain.handle(IPC.KG_QUERY_ENTITY, (_e, name: string, opts?: any) => {
+    return knowledgeGraph.queryEntity(name, opts)
+  })
+
+  ipcMain.handle(IPC.KG_QUERY_RELATIONSHIP, (_e, predicate: string, asOf?: string) => {
+    return knowledgeGraph.queryRelationship(predicate, asOf)
+  })
+
+  ipcMain.handle(IPC.KG_TIMELINE, (_e, entityName: string, limit?: number) => {
+    return knowledgeGraph.timeline(entityName, limit)
+  })
+
+  ipcMain.handle(IPC.KG_STATS, () => {
+    return knowledgeGraph.stats()
+  })
+}
+
+// ─── Agent Diary ──────────────────────────────────────────────────────────────
+
+function registerDiaryHandlers(): void {
+  ipcMain.handle(IPC.DIARY_WRITE, (_e, opts: any) => {
+    return diaryManager.write(opts)
+  })
+
+  ipcMain.handle(IPC.DIARY_READ, (_e, projectId: string, agentName?: string, lastN?: number) => {
+    return diaryManager.read(projectId, agentName, lastN)
+  })
+
+  ipcMain.handle(
+    IPC.DIARY_READ_BY_TOPIC,
+    (_e, projectId: string, topic: string, lastN?: number) => {
+      return diaryManager.readByTopic(projectId, topic, lastN)
+    }
+  )
 }
 
 // ─── Checkpoints ──────────────────────────────────────────────────────────────
